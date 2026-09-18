@@ -1,0 +1,9 @@
+#Patch notes
+Latest (v1.1)
+  + Reworked settings UI
+  + Added new facts
+  + Increased resolution
+  + Added multiple languages into settings
+  + Added an Inversion mode,swapping grey with white and white with gray in settings/patterns
+  - Removed ESC to exit
+  + Added "CL0SE" as a self-destruct code. Enter it into the timer window.
