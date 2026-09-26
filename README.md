@@ -11,3 +11,4 @@ if you try to open it and it says "Apple could not verify “Productivity Breach
 4) The system will ask your Mac password. Enter it.
 This will open the app, but you should know that it's still in beta, so since you aren't supposed to close it with "Quit" I left several backup options such as ESC and force quit through option+command+esc.
 Enjoy!
+P.S. v1.1 removed ESC as a force quit. now you have to type in "CL0SE" into the textbox, for you to be able to close the app. Though, v1.5 will introduce a sub-app for PB which can change that password and is able to close the main app remotely. Update releases 27th of September, 22:00 (California). cya then!
