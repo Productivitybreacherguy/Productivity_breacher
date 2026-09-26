@@ -1,5 +1,25 @@
 #Patch notes
-Latest (v1.1)
+v1.5 the SUB-APP update.
+ *General:
+  + Added new app
+  + Added socket connecting
+*Productivity Breacher
+  + Added socket
+  + Textbox "filter" bug fix
+  + Quality of life, sound changes.
+*Productivity Breacher PARENT
+  + Added UI
+  + Added socket
+  + Added options
+  + Added remote closing
+  + Added password changing
+  + Added remote locking
+  + Added settings
+  + Added sounds
+
+------------------------------------
+
+v1.1 Breach+
   + Reworked settings UI
   + Added new facts
   + Increased resolution
@@ -9,6 +29,4 @@ Latest (v1.1)
   + Added "CL0SE" as a self-destruct code. Enter it into the timer window.
 
 !!!
-So uh... we hit 200 views.
-HOW?!
-i never expected this to get ANY views besides, well, me at all! and for that reason, on 27th of September 9:00 (California) i will release the newest update!Cya then!
+yeah guys, i did it! i made my first major update! im feeling confident i can get, even if a small, but a good community! I'll try to keep up the work and the sunday releases, wish me luck!
