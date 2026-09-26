@@ -1,11 +1,11 @@
 #Patch notes
-v1.5 the SUB-APP update. (LATEST)
+v1.5 the Sub-App Update (LATEST)
  *General:
   + Added new app
   + Added socket connecting
 *Productivity Breacher
   + Added socket
-  + Textbox "filter" bug fix
+  + Fixed textbox input "filter" bug
   + Quality of life, sound changes.
 *Productivity Breacher PARENT
   + Added UI
@@ -19,7 +19,7 @@ v1.5 the SUB-APP update. (LATEST)
 
 ------------------------------------
 
-v1.1 Breach+
+v1.1 Breach + 
   + Reworked settings UI
   + Added new facts
   + Increased resolution
@@ -29,4 +29,4 @@ v1.1 Breach+
   + Added "CL0SE" as a self-destruct code. Enter it into the timer window.
 
 !!!
-yeah guys, i did it! i made my first major update! im feeling confident i can get, even if a small, but a good community! I'll try to keep up the work and the sunday releases, wish me luck!
+Yeah guys, I did it! I made my first major update! I'm feeling confident I can get, even if a small, but a good community! I'll try to keep up the work and the sunday releases, wish me luck!
