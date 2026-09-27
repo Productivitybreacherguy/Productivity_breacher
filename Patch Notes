@@ -28,5 +28,12 @@ v1.1 Breach +
   - Removed ESC to exit
   + Added "CL0SE" as a self-destruct code. Enter it into the timer window.
 
+v1.0 Release
+  + Added UI
+  + Added timer system
+  + Added "ESC" as backup quit
+  + Removed closing on X
+  + Added app killing
+
 !!!
 Yeah guys, I did it! I made my first major update! I'm feeling confident I can get, even if a small, but a good community! I'll try to keep up the work and the sunday releases, wish me luck!
