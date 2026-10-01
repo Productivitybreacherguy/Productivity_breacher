@@ -1,9 +1,9 @@
 # Productivity breacher,how to use/install
 1. This app is made for MacOS users that struggle with playing games during breaks and making those breaks... a little too long. it's still in beta, but it's usable. set your timer (10s,20m,1h or so) and play!
 When it runs out, your gaming apps such as roblox or discord are temporarily locked until you set the next timer.
-2. -- Installation Process ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+2. Installation process
 when you install the program, you will need to transfer it to the applications folder, then open it and you're done. enjoy!
-3. -- Installation Problems -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+3. Installation problems
 if you try to open it and it says "Apple could not verify “Productivity Breacher” is free of malware that may harm your Mac or compromise your privacy," do This:
 1) Press "Done."
 2) Open the "System Settings" app, go into the "Privacy & Security folder," scroll down until you see ""Productivity breacher" was blocked to protect your Mac."
@@ -11,4 +11,4 @@ if you try to open it and it says "Apple could not verify “Productivity Breach
 4) The system will ask your Mac password. Enter it.
 This will open the app, but you should know that it's still in beta, so since you aren't supposed to close it with "Quit" I left several backup options such as ESC and force quit through option+command+esc.
 Enjoy!
-P.S. v1.1 removed ESC as a force quit. now you have to type in "CL0SE" into the textbox, for you to be able to close the app. Though, v1.5 will introduce a sub-app for PB which can change that password and is able to close the main app remotely. Update releases 27th of September, 9:00 (California). cya then!
+P.S. v1.1 removed ESC as a force quit. now you have to type in "CL0SE" into the textbox, for you to be able to close the app. Also, v1.5 has introduced a sub-app for PB which can change that password and is able to close the main app remotely. Updates are weekly at Sundays, 9:00 (California). cya then!
