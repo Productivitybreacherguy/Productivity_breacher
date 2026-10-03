@@ -43,3 +43,5 @@ jobs:
           git add COUNTDOWN.md
           git diff --quiet && git diff --staged --quiet || git commit -m "Update countdown"
           git push
+
+          
