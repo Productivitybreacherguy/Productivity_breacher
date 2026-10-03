@@ -1,5 +1,5 @@
 # ⏳ Countdown to v2.1
 
-**Release:** Saturday, October 3, 9:00 AM California (= 21:00 Tyumen)
+**Release:** Saturday, October 3, 9:00 AM California
 
-**Time left:** 40 minutes
+**Time left:** 0.65 hours 
