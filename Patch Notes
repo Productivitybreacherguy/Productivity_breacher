@@ -1,12 +1,77 @@
 #Patch notes
-Upcoming:
 
-v2̸.̷1̶ the C̸O̷N̶T̷E̸N̷T̶ update (UPCOMING)
-"The biggest small update yet."
+finished:
+
+v2̸.̷1̶ the C̸O̷N̶T̷E̸N̷T̶ update
+"I said I would bring a car full of functions. I brought a truck."
 - me.
-COMING 3.10.2026 9AM (California)
 
-Finished:
+*General
+    + Added achivement system:
+        · 1. Welcome! 
+             “did I just get hacked?”
+        · 2. Time-managing.
+            “Tick tock goes the clock... “
+        · 3. Stop right there! 
+             “aw man this suckz”
+
+        · 4. Locked and loaded.
+             “PAY US TO GET YOUR FILES BACK!11!1!!1”
+        · 5. Damn it! 
+             “unfortunate, yeah.” 
+        · 6. New looks.
+             “there are skins here???”
+        · 7. A Hunter's dream.
+             “did you hear anything?”
+
+        · 8. Sensory overload
+             “Secret way secret way”
+
+        · 9. Pomodoro would be proud
+             “Again & again & again”
+
+        · 10. Bug spray
+             “yeah man the President knows my name!”
+
+        ...And many more! I'll be giving hints to how to get them in my upcoming discord server!
+    + Added secret codes
+        · Snakey
+        · PartyLaws (Shoutout to Party-lawfullness from reddit!)
+        · MyMommaStrict
+        · CameFromGithub
+        · IHateThis
+        · bruce (shoutout to BruceWayne from reddit!)
+        · Cool (shoutout to CoollyAboriginal from reddit!)
+    + Added music type selection in settings
+        Affects:
+            · Background music
+            · SFX 
+    + Added Anti-bypass.
+        functions:
+            · catches renamed apps, blocks them aswell.
+            · catches repositioned apps, blocks them aswell.
+            · now kills browsers upon locating a banned link such as youtube.
+    + Added free day function into Parent.
+    + Upgraded UI
+    + Full code cleanup
+    + Patterns anims
+
+*Socket/Connections:
+    + Improved socket connection system, firewall install for hackers.
+    + Added two new requests:
+        · Discard
+        · Free day
+
+*Links
+    + Created discord server (UNFINISHED)
+        · https://discord.gg/GGa7fa9e
+
+!!!
+This update was so massive I suspect i forgot to mention things. I really hope you love it, and I'm ready to tank the criticism for adding achievements into a productivity game. But in all things considered... 
+...
+I feel like this is the first time I have some people supporting something global that I'm making. Enjoy the update.
+
+------------------------------------
 
 v1.5 the Sub-App Update (LATEST)
  *General:
@@ -37,6 +102,8 @@ v1.1 Breach +
   - Removed ESC to exit
   + Added "CL0SE" as a self-destruct code. Enter it into the timer window.
 
+------------------------------------
+
 v1.0 Release
   + Added UI
   + Added timer system
@@ -45,5 +112,5 @@ v1.0 Release
   + Added app killing
 
 !!!
-Guys I've got good and bad news. The content update is coming tomorrow, that part is true. But the Halloween update might take me a month to complete.
+Guys I've got good and bad news. The content update is complete, that part is true. But the Halloween update might take me a month to complete.
 I have school, olympiads, and besides all of that — I also want to actually celebrate it. I hope Christmas won't have the same problem. That's all for now.
