@@ -16,7 +16,8 @@ jobs:
           python3 - <<'EOF'
           from datetime import datetime, timezone
           
-          release = datetime(2026, 10, 4, 16, 0, 0, tzinfo=timezone.utc)
+          # Release: Oct 3, 2026, 9:00 AM California (PDT, UTC-7) = 16:00 UTC
+          release = datetime(2026, 10, 3, 16, 0, 0, tzinfo=timezone.utc)
           now = datetime.now(timezone.utc)
           delta = release - now
           
@@ -27,7 +28,7 @@ jobs:
               minutes = int((delta.total_seconds() % 3600) // 60)
               text = f"""# ⏳ Countdown to v2.1
 
-          **Release:** Sunday, October 4, 9:00 AM California (= 21:00 Tyumen)
+          **Release:** Saturday, October 3, 9:00 AM California (= 21:00 Tyumen)
 
           **Time left:** {hours} hours {minutes} minutes
           """
@@ -43,8 +44,3 @@ jobs:
           git add COUNTDOWN.md
           git diff --quiet && git diff --staged --quiet || git commit -m "Update countdown"
           git push
-
-
-          
-
-          
