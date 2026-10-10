@@ -1,7 +1,7 @@
 # Productivity breacher, how to use/install
 1. This app is made for MacOS users that struggle with playing games during breaks and making those breaks... a little too long. It's still in beta, but is usable. set your timer (10s,20m,1h or so) and play! 
 When it runs out, your gaming apps such as Roblox or Discord are temporarily locked until you set the next timer.
-![Main app screenshot](https://github.com/user-attachments/assets/ca8a6eb7-d591-4089-b755-74483192d8d5)
+<img src="https://github.com/user-attachments/assets/ca8a6eb7-d591-4089-b755-74483192d8d5" alt="Main app screenshot" width="600">
 
 2. Installation process
 when you install the program, you will need to transfer it to the applications folder, then open it and you're done. enjoy!
