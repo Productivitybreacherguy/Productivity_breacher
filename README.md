@@ -3,10 +3,12 @@
 When it runs out, your gaming apps such as Roblox or Discord are temporarily locked until you set the next timer.
 <img width="4480" height="2520" alt="Main App Screenshot" src="https://github.com/user-attachments/assets/94d7645b-9a68-4df3-a35a-378c51d0d87c" />
 
-2. Installation process
+2. Installation process:
 when you install the program, you will need to transfer it to the applications folder, then open it and you're done. enjoy!
+<img width="4480" height="2520" alt="Installation Screenshot" src="https://github.com/user-attachments/assets/58f8b487-f070-43da-8e59-e66dfd0e0b1e" />
 
-3. Installation problems
+
+4. Installation problems:
 if you try to open it and it says "Apple could not verify “Productivity Breacher” is free of malware that may harm your Mac or compromise your privacy," do This:
 1) Press "Done."
 2) Open the "System Settings" app, go into the "Privacy & Security folder," scroll down until you see ""Productivity breacher" was blocked to protect your Mac."
