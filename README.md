@@ -9,6 +9,8 @@ when you install the program, you will need to open the .dmg file, then move bot
 
 # 3. Installation problems:
 1) if you try to open it and a pop-up saying "Apple could not verify “Productivity Breacher” is free of malware that may harm your Mac or compromise your privacy" appears, do This:
+   <img width="4480" height="2520" alt="Safety Hazard App Screenshot" src="https://github.com/user-attachments/assets/687304f1-8dc6-4298-9876-814f56c4a849" />
+
   · Press "Done."
   · Open the "System Settings" app, go into "Privacy & Security," scroll down until you see ""Productivity Breacher" was blocked to protect your Mac."
   · Press the "Open Anyway" button right next to the text.
