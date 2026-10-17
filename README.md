@@ -27,4 +27,4 @@ This will open the app, but you should know that it's still in beta, so since yo
 Enjoy!
 
 
-P.S. v2.1 is OUT NOW! Have fun with finding all the secrets, getting used to the new mechanics and overall getting your productivity better!Updates are weekly at Sundays, 9:00 AM (California). cya then!
+P.S. v2.1 is OUT NOW! Have fun with finding all the secrets, getting used to the new mechanics and overall getting your productivity better! Updates are weekly at Saturdays, 9:00 AM (California). cya then!
