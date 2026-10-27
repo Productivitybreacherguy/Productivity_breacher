@@ -13,47 +13,18 @@ import secrets
 import random
 import socket as _socket
 
-SESSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pb_session.json")
-
-def get_or_create_session():
-    """Читает или создаёт pb_session.json с портом и токеном."""
-    if os.path.exists(SESSION_FILE):
-        try:
-            with open(SESSION_FILE, "r") as f:
-                data = json.load(f)
-            if "port" in data and "token" in data:
-                return data["port"], data["token"]
-        except Exception:
-            pass
-    
-    # Создаём новый
-    port = random.randint(20000, 60000)
-    token = secrets.token_hex(16)
-    data = {"port": port, "token": token}
-    try:
-        with open(SESSION_FILE, "w") as f:
-            json.dump(data, f)
-    except Exception as e:
-        print(f"[SESSION] Ошибка сохранения: {e}")
-    return port, token
-
-SESSION_PORT, SESSION_TOKEN = get_or_create_session()
-
 # ============================================================
-# ИНИЦИАЛИЗАЦИЯ
+# INITIALIZATION
 # ============================================================
-
 pygame.init()
 pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
-
 W, H = 500, 700
 screen = pygame.display.set_mode((W, H), pygame.SCALED | pygame.RESIZABLE)
 pygame.display.set_caption("[BETA] Productivity Breacher")
 
 # ============================================================
-# ЦВЕТА
+# COLORS
 # ============================================================
-
 WHITE       = (255, 255, 255)
 WHITE_DARK  = (230, 230, 230)
 GRAY_SOFT   = (240, 240, 240)
@@ -66,40 +37,110 @@ GREEN       = (100, 220, 100)
 BORDER      = 10
 
 # ============================================================
-# ШРИФТЫ
+# SOCKET / SESSION  (fixed: always 127.0.0.1)
 # ============================================================
+SESSION_FILE = os.path.join(os.path.expanduser("~/Library/Application Support/ProductivityBreacher"), "pb_session.json")
 
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # не важно, подключен ли он, главное - получить IP
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = '127.0.0.1'
+    finally:
+        s.close()
+    return ip
+
+def get_or_create_session():
+    if os.path.exists(SESSION_FILE):
+        try:
+            with open(SESSION_FILE, "r") as f:
+                data = json.load(f)
+            if "port" in data and "token" in data:
+                data["ip"] = get_local_ip()
+                try:
+                    with open(SESSION_FILE, "w") as f:
+                        json.dump(data, f)
+                except Exception:
+                    pass
+                return data["port"], data["token"], data["ip"]
+        except Exception:
+            pass
+    
+    # Если файла нет, создаём его с нуля
+    port = random.randint(20000, 60000)
+    token = secrets.token_hex(16)
+    local_ip = get_local_ip() # <--- Берем реальный IP
+    
+    data = {"port": port, "token": token, "ip": local_ip}
+    
+    try:
+        os.makedirs(os.path.dirname(SESSION_FILE), exist_ok=True)
+        with open(SESSION_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception as e:
+        print(f"[SESSION] Ошибка сохранения: {e}")
+        
+    return port, token, local_ip
+
+SESSION_PORT, SESSION_TOKEN, SESSION_IP = get_or_create_session()#fix this later
+
+# ============================================================
+# FONTS
+# ============================================================
 font_big   = pygame.font.Font(None, 48)
 font_mid   = pygame.font.Font(None, 36)
 font_small = pygame.font.Font(None, 30)
 font_tiny  = pygame.font.Font(None, 24)
-pending_request = None   # None, "discard", "free_day"
+pending_request = None
+last_halloween_check = 0.0
 
 # ============================================================
-# ТЕМЫ
+# THEMES
 # ============================================================
-
 BASE_THEMES = {
     "Классика":   (255, 215, 0),
     "Фиолетовая": (180, 100, 255),
     "Зелёная":    (100, 220, 120),
     "Синяя":      (100, 160, 255),
+    "Хэллоуин":   (255, 140, 0),
+}
+CODE_THEMES = {
+    "Snakey":          (50, 205, 50),
+    "PartyLaws":       (139, 69, 19),
+    "MyMommaStrict":   (20, 20, 20),
+    "CameFromGithub":  (60, 60, 60),
+    "bruce":           (0, 255, 255),
+    "Cool":            (173, 216, 230),
+    "OrbitalPetition": (75, 0, 130),
 }
 
-CODE_THEMES = {
-    "Snakey":         (50, 205, 50),
-    "PartyLaws":      (139, 69, 19),
-    "MyMommaStrict":  (20, 20, 20),
-    "CameFromGithub": (60, 60, 60),
-}
+def get_available_themes():
+    result = dict(BASE_THEMES)
+    now = time.localtime()
+    is_halloween = (now.tm_mon < 11) or (now.tm_mon == 11 and now.tm_mday <= 4)
+    has_achievement = "unholy_spirits" in unlocked_achievements
+    if not is_halloween and not has_achievement:
+        if "Хэллоуин" in result:
+            del result["Хэллоуин"]
+    for code in ACTIVATED_CODES:
+        if code in CODE_THEMES:
+            result[code] = CODE_THEMES[code]
+    return result
 
 current_theme = "Классика"
 ACCENT = BASE_THEMES[current_theme]
+if current_theme == "Хэллоуин":
+    available = get_available_themes()
+    if "Хэллоуин" not in available:
+        current_theme = "Классика"
+        ACCENT = BASE_THEMES["Классика"]
 
 # ============================================================
-# ЦВЕТА ТЕКСТА
+# TEXT COLORS
 # ============================================================
-
 TEXT_COLORS = {
     "Чёрный":            (0, 0, 0),
     "Серый":             (100, 100, 100),
@@ -110,85 +151,74 @@ current_text_color = "Чёрный"
 TEXT_COLOR = TEXT_COLORS[current_text_color]
 
 # ============================================================
-# УЗОРЫ ФОНА
+# BACKGROUND PATTERNS
 # ============================================================
-
 PATTERNS = ["Шахматка", "Полосы", "Точки", "Ромбы", "Пусто"]
 current_pattern  = "Шахматка"
 invert_pattern   = False
 animate_pattern  = False
 anim_offset      = 0.0
 filler_variable = True
+hint_folder_name = None
+hint_folder_base = None
 
 # ============================================================
-# ЯЗЫКИ
+# LANGUAGES
 # ============================================================
-
 LANGUAGES = ["Русский", "English", "Deutsch", "Français", "Español"]
-current_language = "Русский"
+current_language = "English"
 
 # ============================================================
-# ЗВУКОВЫЕ ТЕМЫ
+# SOUND THEMES
 # ============================================================
-
 SOUND_THEMES = ["Классика", "Джаз", "Марио", "Тишина", "Дождь", "Оркестр"]
 current_sound_theme = "Классика"
 sound_scroll = 0
-# Карта: тема → имя файла в папке music/
 SOUND_FILES = {
     "Классика": "ClassicPB.mp3",
     "Джаз":     "JazzPB.mp3",
     "Марио":    "MarioPB.mp3",
     "Дождь":    "RainPB.mp3",
     "Оркестр":  "OrchestraPB.mp3",
-    # "Тишина" — без файла
 }
-
-current_music_file = None   # какой трек сейчас играет
-
+current_music_file = None
 
 def play_background_music(theme_name):
-    """Запускает фоновую музыку для выбранной темы. Если 'Тишина' — выключает."""
     global current_music_file
-
-    # Тишина — просто стоп
     if theme_name == "Тишина" or theme_name not in SOUND_FILES:
         pygame.mixer.music.stop()
         current_music_file = None
         return
-
     filename = SOUND_FILES[theme_name]
     if filename == current_music_file:
-        return  # уже играет — не перезапускаем
-
+        return
     music_path = resource_path(os.path.join("music", filename))
     if not os.path.exists(music_path):
         print(f"[MUSIC] Не найден файл: {music_path}")
         return
-
     try:
         pygame.mixer.music.load(music_path)
         pygame.mixer.music.set_volume(volume / 100)
-        pygame.mixer.music.play(-1)  # -1 = бесконечный loop
+        pygame.mixer.music.play(-1)
         current_music_file = filename
         print(f"[MUSIC] Играет: {filename}")
     except Exception as e:
         print(f"[MUSIC] Ошибка загрузки: {e}")
+
 ach_scroll = 0
+volume = 75
 
 # ============================================================
 # FREE DAY
 # ============================================================
-
 free_day_active          = False
 free_day_date            = ""
 free_day_request_pending = False
 free_day_popup_until     = 0.0
 
 # ============================================================
-# ЗАМЕТКА
+# NOTES
 # ============================================================
-
 note_text    = ""
 note_active  = False
 note_slide   = 0.0
@@ -196,9 +226,8 @@ current_note = ""
 note_used    = False
 
 # ============================================================
-# КРЕСТ (анимация конца таймера)
+# CROSS ANIMATION
 # ============================================================
-
 cross_phase               = "idle"
 cross_scale               = 0.0
 cross_alpha               = 255
@@ -207,17 +236,15 @@ cross_start               = 0.0
 pending_state_after_cross = None
 
 # ============================================================
-# МНОЖИТЕЛИ (от кодов)
+# MULTIPLIERS
 # ============================================================
-
 timer_speed_mult    = 1.0
 cooldown_speed_mult = 1.0
 cooldown_flat_bonus = 0
 
 # ============================================================
-# КВЕСТЫ
+# QUESTS
 # ============================================================
-
 QUESTS_POOL = [
     ("Set up 3 timers",       "timers_count",   3),
     ("Get an app killed",     "app_killed",     1),
@@ -230,9 +257,8 @@ quest_progress = {}
 quests_date    = ""
 
 # ============================================================
-# КОДЫ
+# CODES
 # ============================================================
-
 ACTIVATED_CODES = []
 code_input = ""
 code_message = ""
@@ -240,9 +266,8 @@ code_message_ok = False
 code_message_until = 0.0
 
 # ============================================================
-# ПЕРЕВОДЫ
+# TRANSLATIONS
 # ============================================================
-
 TRANSLATIONS = {
     "Русский": {
         "settings": "Настройки", "sound": "Звук", "themes": "Темы", "text": "Текст",
@@ -250,12 +275,15 @@ TRANSLATIONS = {
         "choose_theme": "Выберите тему", "choose_text": "Цвет текста",
         "choose_pattern": "Узор фона", "inversion": "Инверсия", "animation": "Анимация",
         "language": "Язык", "options": "Меню", "history": "История", "quests": "Квесты",
-        "codes": "Коды",
+        "codes": "Коды", "achievements": "Достижения",
         "timer_label": "Ставьте свой таймер!", "too_much": "это слишком много времени!",
         "max_2h": "не более 2 часов!", "cooldown": "Перезарядка!",
         "no_play": "играть пока нельзя!", "start": "Старт!",
         "closing1": "Закрываешь меня?", "closing2a": "Думаешь можешь",
         "closing2b": "сам контролировать себя?", "closing3": "ладно, удачи!",
+        "request_free_day": "Запросить Free Day", "free_day_active": "Free Day: АКТИВЕН",
+        "free_day_pending": "Free Day: ОЖИДАНИЕ", "back": "Назад",
+        "no_codes": "Коды пока не активированы", "type_code": "Введите код, нажмите Enter"
     },
     "English": {
         "settings": "Settings", "sound": "Sound", "themes": "Themes", "text": "Text",
@@ -263,12 +291,15 @@ TRANSLATIONS = {
         "choose_theme": "Choose theme", "choose_text": "Text color",
         "choose_pattern": "Background pattern", "inversion": "Inversion",
         "animation": "Animation", "language": "Language", "options": "Options",
-        "history": "History", "quests": "Quests", "codes": "Codes",
+        "history": "History", "quests": "Quests", "codes": "Codes", "achievements": "Achievements",
         "timer_label": "Set your timer!", "too_much": "that's too much time!",
         "max_2h": "no more than 2 hours!", "cooldown": "Cooldown!",
         "no_play": "you can't play yet!", "start": "Start!",
         "closing1": "Closing me?", "closing2a": "You think you can",
         "closing2b": "control yourself?", "closing3": "well, good luck!",
+        "request_free_day": "Request Free Day", "free_day_active": "Free Day: ACTIVE",
+        "free_day_pending": "Free Day: PENDING", "back": "Back",
+        "no_codes": "No codes activated yet", "type_code": "Type code, press Enter"
     },
     "Deutsch": {
         "settings": "Einstellungen", "sound": "Ton", "themes": "Themen", "text": "Text",
@@ -276,12 +307,15 @@ TRANSLATIONS = {
         "choose_theme": "Thema wählen", "choose_text": "Textfarbe",
         "choose_pattern": "Hintergrundmuster", "inversion": "Inversion",
         "animation": "Animation", "language": "Sprache", "options": "Optionen",
-        "history": "Verlauf", "quests": "Quests", "codes": "Codes",
+        "history": "Verlauf", "quests": "Quests", "codes": "Codes", "achievements": "Erfolge",
         "timer_label": "Stelle deinen Timer!", "too_much": "das ist zu viel Zeit!",
         "max_2h": "nicht mehr als 2 Stunden!", "cooldown": "Abklingzeit!",
         "no_play": "du kannst noch nicht spielen!", "start": "Start!",
         "closing1": "Schließt du mich?", "closing2a": "Denkst du, du kannst",
         "closing2b": "dich selbst kontrollieren?", "closing3": "na dann, viel Glück!",
+        "request_free_day": "Free Day anfordern", "free_day_active": "Free Day: AKTIV",
+        "free_day_pending": "Free Day: AUSSTEHEND", "back": "Zurück",
+        "no_codes": "Noch keine Codes aktiviert", "type_code": "Code eingeben, Enter drücken"
     },
     "Français": {
         "settings": "Paramètres", "sound": "Son", "themes": "Thèmes", "text": "Texte",
@@ -289,12 +323,15 @@ TRANSLATIONS = {
         "choose_theme": "Choisir un thème", "choose_text": "Couleur du texte",
         "choose_pattern": "Motif de fond", "inversion": "Inversion",
         "animation": "Animation", "language": "Langue", "options": "Options",
-        "history": "Historique", "quests": "Quêtes", "codes": "Codes",
+        "history": "Historique", "quests": "Quêtes", "codes": "Codes", "achievements": "Succès",
         "timer_label": "Réglez votre minuteur!", "too_much": "c'est trop de temps!",
         "max_2h": "pas plus de 2 heures!", "cooldown": "Recharge!",
         "no_play": "tu ne peux pas encore jouer!", "start": "Démarrer!",
         "closing1": "Tu me fermes?", "closing2a": "Tu penses pouvoir",
         "closing2b": "te contrôler?", "closing3": "eh bien, bonne chance!",
+        "request_free_day": "Demander un Free Day", "free_day_active": "Free Day: ACTIF",
+        "free_day_pending": "Free Day: EN ATTENTE", "back": "Retour",
+        "no_codes": "Aucun code activé", "type_code": "Tapez le code, appuyez sur Entrée"
     },
     "Español": {
         "settings": "Ajustes", "sound": "Sonido", "themes": "Temas", "text": "Texto",
@@ -302,29 +339,65 @@ TRANSLATIONS = {
         "choose_theme": "Elige tema", "choose_text": "Color del texto",
         "choose_pattern": "Patrón de fondo", "inversion": "Inversión",
         "animation": "Animación", "language": "Idioma", "options": "Opciones",
-        "history": "Historial", "quests": "Misiones", "codes": "Códigos",
+        "history": "Historial", "quests": "Misiones", "codes": "Códigos", "achievements": "Logros",
         "timer_label": "¡Pon tu temporizador!", "too_much": "¡eso es demasiado tiempo!",
         "max_2h": "¡no más de 2 horas!", "cooldown": "¡Recarga!",
         "no_play": "¡aún no puedes jugar!", "start": "¡Empezar!",
         "closing1": "¿Me estás cerrando?", "closing2a": "¿Crees que puedes",
         "closing2b": "controlarte a ti mismo?", "closing3": "bueno, ¡buena suerte!",
+        "request_free_day": "Solicitar Free Day", "free_day_active": "Free Day: ACTIVO",
+        "free_day_pending": "Free Day: PENDIENTE", "back": "Atrás",
+        "no_codes": "No hay códigos activados", "type_code": "Escribe el código, presiona Enter"
     },
 }
 
 def t(key):
-    """Возвращает перевод ключа для текущего языка."""
     return TRANSLATIONS[current_language].get(key, key)
 
-# ============================================================
-# ГРОМКОСТЬ
-# ============================================================
+def t_item(item_name):
+    translations = {
+        "Русский": {
+            "Классика": "Классика", "Фиолетовая": "Фиолетовая", "Зелёная": "Зелёная",
+            "Синяя": "Синяя", "Хэллоуин": "Хэллоуин", "Джаз": "Джаз", "Марио": "Марио",
+            "Тишина": "Тишина", "Дождь": "Дождь", "Оркестр": "Оркестр",
+            "Чёрный": "Чёрный", "Серый": "Серый", "Тёмно-синий": "Тёмно-синий", "Тёмно-фиолетовый": "Тёмно-фиолетовый",
+            "Шахматка": "Шахматка", "Полосы": "Полосы", "Точки": "Точки", "Ромбы": "Ромбы", "Пусто": "Пусто"
+        },
+        "English": {
+            "Классика": "Classic", "Фиолетовая": "Purple", "Зелёная": "Green",
+            "Синяя": "Blue", "Хэллоуин": "Halloween", "Джаз": "Jazz", "Марио": "Mario",
+            "Тишина": "Silent", "Дождь": "Rain", "Оркестр": "Orchestra",
+            "Чёрный": "Black", "Серый": "Gray", "Тёмно-синий": "Dark Blue", "Тёмно-фиолетовый": "Dark Purple",
+            "Шахматка": "Checkerboard", "Полосы": "Stripes", "Точки": "Dots", "Ромбы": "Diamonds", "Пусто": "Empty"
+        },
+        "Deutsch": {
+            "Классика": "Klassisch", "Фиолетовая": "Lila", "Зелёная": "Grün",
+            "Синяя": "Blau", "Хэллоуин": "Halloween", "Джаз": "Jazz", "Марио": "Mario",
+            "Тишина": "Stille", "Дождь": "Regen", "Оркестр": "Orchester",
+            "Чёрный": "Schwarz", "Серый": "Grau", "Тёмно-синий": "Dunkelblau", "Тёмно-фиолетовый": "Dunkellila",
+            "Шахматка": "Schachbrett", "Полосы": "Streifen", "Точки": "Punkte", "Ромбы": "Rauten", "Пусто": "Leer"
+        },
+        "Français": {
+            "Классика": "Classique", "Фиолетовая": "Violet", "Зелёная": "Vert",
+            "Синяя": "Bleu", "Хэллоуин": "Halloween", "Джаз": "Jazz", "Марио": "Mario",
+            "Тишина": "Silence", "Дождь": "Pluie", "Оркестр": "Orchestre",
+            "Чёрный": "Noir", "Серый": "Gris", "Тёмно-синий": "Bleu Foncé", "Тёмно-фиолетовый": "Violet Foncé",
+            "Шахматка": "Damier", "Полосы": "Rayures", "Точки": "Points", "Ромбы": "Losanges", "Пусто": "Vide"
+        },
+        "Español": {
+            "Классика": "Clásico", "Фиолетовая": "Púrpura", "Зелёная": "Verde",
+            "Синяя": "Azul", "Хэллоуин": "Halloween", "Джаз": "Jazz", "Марио": "Mario",
+            "Тишина": "Silencio", "Дождь": "Lluvia", "Оркестр": "Orquesta",
+            "Чёрный": "Negro", "Серый": "Gris", "Тёмно-синий": "Azul Oscuro", "Тёмно-фиолетовый": "Púrpura Oscuro",
+            "Шахматка": "Tablero", "Полосы": "Rayas", "Точки": "Puntos", "Ромбы": "Rombos", "Пусто": "Vacío"
+        }
+    }
+    lang_dict = translations.get(current_language, translations["English"])
+    return lang_dict.get(item_name, item_name)
 
-volume = 75
-
 # ============================================================
-# ФАКТЫ
+# FACTS
 # ============================================================
-
 FACTS = [
     "А вы знали, что Roblox изначально должен был быть симулятором физики?",
     "А вы знали, что первая версия Minecraft была создана за 6 дней?",
@@ -359,9 +432,8 @@ FACTS = [
 ]
 
 # ============================================================
-# БЛОКИРОВКА ПРИЛОЖЕНИЙ
+# BLOCKS
 # ============================================================
-
 BLOCKED_APPS = ["Roblox", "Minecraft", "YouTube", "Discord", "ChatGPT", "OpenAI"]
 BLOCKED_SITES = [
     "youtube.com", "youtu.be", "m.youtube.com",
@@ -373,47 +445,45 @@ BLOCKED_SITES = [
     "netflix.com", "www.netflix.com",
     "discord.com", "www.discord.com",
 ]
-
 can_play       = False
 socket_conn    = None
 password       = "CL0SE"
 cooldown_active = False
 
 # ============================================================
-# ФАЙЛЫ ДАННЫХ
+# FILE ACCESS (HIDDEN IN LIBRARY)
 # ============================================================
-
 def resource_path(relative_path):
-    """Возвращает путь к ресурсу — работает и в .py, и в собранном .app."""
     try:
         base_path = sys._MEIPASS
     except AttributeError:
         base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TIMERS_FILE      = os.path.join(BASE_DIR, "timers.json")
-HISTORY_TXT_FILE = os.path.join(BASE_DIR, "history.txt")
-QUESTS_FILE      = os.path.join(BASE_DIR, "quests.json")
-CODES_FILE       = os.path.join(BASE_DIR, "codes.json")
+
+APP_SUPPORT_DIR = os.path.expanduser("~/Library/Application Support/ProductivityBreacher")
+os.makedirs(APP_SUPPORT_DIR, exist_ok=True)
+TIMERS_FILE       = os.path.join(APP_SUPPORT_DIR, "timers.json")
+HISTORY_TXT_FILE  = os.path.join(APP_SUPPORT_DIR, "history.txt")
+QUESTS_FILE       = os.path.join(APP_SUPPORT_DIR, "quests.json")
+CODES_FILE        = os.path.join(APP_SUPPORT_DIR, "codes.json")
+ACHIEVEMENTS_FILE = os.path.join(APP_SUPPORT_DIR, "achievements.json")
+SIGNATURES_FILE   = os.path.join(APP_SUPPORT_DIR, "signatures.json")
 
 # ============================================================
 # СОСТОЯНИЕ ПРИЛОЖЕНИЯ
 # ============================================================
-
-state           = "input"
-timer_input     = ""
-timer_start     = 0
-timer_seconds   = 0
-cooldown_end    = 0
+state            = "input"
+timer_input      = ""
+timer_start      = 0
+timer_seconds    = 0
+cooldown_end     = 0
 cooldown_seconds = 0
-error_until     = 0
-current_fact    = ""
-close_start     = 0
-menu_state      = "closed"
-slider_drag     = False
-timer_history   = []
-
-# Request Discard
+error_until      = 0
+current_fact     = ""
+close_start      = 0
+menu_state       = "closed"
+slider_drag      = False
+timer_history    = []
 request_btn_visible  = False
 request_btn_slide    = 0.0
 request_btn_rect     = None
@@ -421,25 +491,15 @@ request_phase        = "idle"
 request_phase_time   = 0.0
 request_used         = False
 cooldown_start_time  = 0.0
+theme_scroll = 0
 
 # ============================================================
-# ФАЙЛЫ: timers.json
+# FILES: timers.json
 # ============================================================
-
 def ensure_timers_file():
     if not os.path.exists(TIMERS_FILE):
         with open(TIMERS_FILE, "w", encoding="utf-8") as f:
             f.write("[]")
-    else:
-        filler_variable = True
-
-def get_available_themes():
-    """Возвращает базовые темы + те кодовые, что разблокированы."""
-    result = dict(BASE_THEMES)
-    for code, color in CODE_THEMES.items():
-        if code in ACTIVATED_CODES:
-            result[code] = color
-    return result
 
 def load_history():
     if not os.path.exists(TIMERS_FILE):
@@ -451,27 +511,81 @@ def load_history():
     except (json.JSONDecodeError, OSError):
         return []
 
-
 def save_history(history):
     if len(history) > 30:
         history = history[-30:]
     try:
         with open(TIMERS_FILE, "w", encoding="utf-8") as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
-    except OSError as e:
-        filler_variable = True
+    except OSError:
+        pass
 
+def find_existing_folder():
+    base_folders = [
+        os.path.expanduser("~/Desktop"),
+        os.path.expanduser("~/Downloads"),
+        os.path.expanduser("~/Documents"),
+    ]
+    secret_folder_name = "Productivity_breaacher_data_DONT_TOUCH"
+    for base in base_folders:
+        if not os.path.exists(base):
+            continue
+        try:
+            for item in os.listdir(base):
+                item_path = os.path.join(base, item)
+                if os.path.isdir(item_path) and item != secret_folder_name:
+                    return item_path, item, base
+        except Exception as e:
+            print(f"[HALLOWEEN] Ошибка: {e}")
+            continue
+    return None, None, None
+
+def spawn_halloween_files():
+    folders = [
+        os.path.expanduser("~/Desktop"),
+        os.path.expanduser("~/Documents"),
+        os.path.expanduser("~/Downloads"),
+    ]
+    found_path, found_name, found_base = find_existing_folder()
+    secret_folder = os.path.expanduser("~/Documents/Productivity_breaacher_data_DONT_TOUCH")
+    try:
+        os.makedirs(secret_folder, exist_ok=True)
+    except Exception as e:
+        print(f"[HALLOWEEN] Ошибка: {e}")
+        secret_folder = None
+    files_data = [
+        ("pb_pumpkin.json", {"text": "scary halloween!"}),
+        ("pb_bat.json",     {"text": "pb halloween!"}),
+        ("pb_snake.json",   {"text": "ghost hunting time"}),
+        ("pb_candy.json",   {"text": "spooky candy!"}),
+        ("pb_ghost.json",   {"text": "its spooky season!"}),
+        ("pb_secret.json",  {"text": "you found the hidden one..."}),
+    ]
+    for filename, data in files_data:
+        if filename == "pb_secret.json" and secret_folder:
+            filepath = os.path.join(secret_folder, filename)
+        elif filename == "pb_pumpkin.json" and found_path:
+            filepath = os.path.join(found_path, filename)
+        else:
+            folder = random.choice(folders)
+            filepath = os.path.join(folder, filename)
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            print(f"[HALLOWEEN] Создан: {filepath}")
+        except Exception as e:
+            print(f"[HALLOWEEN] Ошибка: {e}")
+    global hint_folder_name, hint_folder_base
+    hint_folder_name = found_name
+    hint_folder_base = os.path.basename(found_base) if found_base else None
 
 def get_history_stats():
-    """Возвращает статистику по истории таймеров."""
     empty = {"total": 0, "avg": "0s", "most_common": "none", "most_count": 0, "total_seconds": 0}
     if not timer_history:
         return empty
-
     total = len(timer_history)
     total_seconds = 0
     counts = {}
-
     for entry in timer_history:
         d = entry.get("duration", "0s")
         counts[d] = counts.get(d, 0) + 1
@@ -482,7 +596,6 @@ def get_history_stats():
             total_seconds += secs
         except Exception:
             pass
-
     avg = total_seconds // total if total > 0 else 0
     if avg >= 3600:
         avg_str = f"{avg // 3600}h {(avg % 3600) // 60}m"
@@ -490,7 +603,6 @@ def get_history_stats():
         avg_str = f"{avg // 60}m {avg % 60}s"
     else:
         avg_str = f"{avg}s"
-
     most_common = max(counts, key=counts.get) if counts else "none"
     return {
         "total": total,
@@ -500,6 +612,21 @@ def get_history_stats():
         "total_seconds": total_seconds,
     }
 
+def count_halloween_files():
+    base_folders = [
+        os.path.expanduser("~/Desktop"),
+        os.path.expanduser("~/Documents"),
+        os.path.expanduser("~/Downloads"),
+    ]
+    count = 0
+    for base in base_folders:
+        if not os.path.exists(base):
+            continue
+        for root, dirs, files in os.walk(base):
+            for f in files:
+                if f.startswith("pb_"):
+                    count += 1
+    return count
 
 def export_history_txt():
     try:
@@ -517,24 +644,19 @@ def export_history_txt():
                     f.write(f"{i}. {duration}  -  {tm}  ({source})\n")
             f.write("\n" + "=" * 30 + "\n")
             f.write(f"Total: {len(timer_history)} timers\n")
-        filler_variable = True
-    except OSError as e:
-        filler_variable = True
-
+    except OSError:
+        pass
 # ============================================================
-# ФАЙЛЫ: quests.json
+# FILES: quests.json
 # ============================================================
-
 def load_quests():
     global daily_quests, quest_progress, quests_date
     today = time.strftime("%d.%m.%Y")
-
     if not os.path.exists(QUESTS_FILE):
         daily_quests = []
         quest_progress = {}
         quests_date = ""
         return
-
     try:
         with open(QUESTS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -551,7 +673,6 @@ def load_quests():
         quest_progress = {}
         quests_date = ""
 
-
 def save_quests():
     try:
         with open(QUESTS_FILE, "w", encoding="utf-8") as f:
@@ -559,9 +680,8 @@ def save_quests():
                 {"date": quests_date, "quests": daily_quests, "progress": quest_progress},
                 f, ensure_ascii=False, indent=2
             )
-    except OSError as e:
-        filler_variable = True
-
+    except OSError:
+        pass
 
 def generate_quests():
     global daily_quests, quest_progress, quests_date
@@ -572,8 +692,6 @@ def generate_quests():
     quest_progress = {q[1]: 0 for q in daily_quests}
     quests_date = today
     save_quests()
-    filler_variable = True
-
 
 def progress_quest(key):
     global quest_progress
@@ -587,9 +705,8 @@ def progress_quest(key):
             return
 
 # ============================================================
-# ФАЙЛЫ: codes.json
+# FILES: codes.json
 # ============================================================
-
 def load_codes():
     global ACTIVATED_CODES
     if not os.path.exists(CODES_FILE):
@@ -602,146 +719,121 @@ def load_codes():
     except (json.JSONDecodeError, OSError):
         ACTIVATED_CODES = []
 
-
 def save_codes():
     try:
         with open(CODES_FILE, "w", encoding="utf-8") as f:
             json.dump(ACTIVATED_CODES, f, ensure_ascii=False, indent=2)
-    except OSError as e:
-        filler_variable = True
+    except OSError:
+        pass
 
+VALID_CODES = ["Snakey", "PartyLaws", "MyMommaStrict", "CameFromGithub", "IHateThis", "bruce", "Cool", "OrbitalPetition"]
+ACHIEVEMENT_CODES = {
+    "x13xth3s3d4mnbu95m4nx13x": "bug_spray",
+    "x13xh0wth3fu2kdud3x13x":   "twentyfour",
+    "x13x3zW1nfr331m4Ox13x":    "oh_baby_triple",
+    "x13xg0dd4mn1tm4nx13x":     "how_unfortunate",
+    "x13xv1w4sth3b3stx13x":     "old_school",
+}
 
-# Список всех валидных кодов
-VALID_CODES = ["Snakey", "PartyLaws", "MyMommaStrict", "CameFromGithub", "IHateThis"]
 # ============================================================
-# ДОСТИЖЕНИЯ
+# ACHIEVEMENTS
 # ============================================================
-
-ACHIEVEMENTS_FILE = os.path.join(BASE_DIR, "achievements.json")
-SIGNATURES_FILE = os.path.join(BASE_DIR, "signatures.json")
-
-# База сигнатур: {"Roblox": {"name": "robloxplayer", "exe": "/path/to/roblox"}, ...}
 known_signatures = {}
-# Триггер: изменилась ли сигнатура с прошлого раза
 signature_changed = False
-
-# Каждое достижение: (id, название, цитата, описание, можно_получить_автоматически)
 ACHIEVEMENTS = [
-    # --- АВТОМАТИЧЕСКИЕ ---
     ("welcome",         "Welcome!",
      "did I just get hacked?",
      "Enter Productivity Breacher for the first time.", True),
-
     ("first_timer",     "Time-managing.",
      "Tick tock goes the clock...",
      "Set up your first timer.", True),
-
     ("first_cooldown",  "Stop right there!",
      "aw man this suckz",
      "Enter your first cooldown state.", True),
-
     ("app_killed_cd",   "Locked and loaded.",
      "PAY US TO GET YOUR FILES BACK!11!1!!1",
      "Have an app get killed via entering cooldown.", True),
-
     ("app_killed_free", "Damn it!",
      "unfortunate, yeah.",
      "Get an app killed via trying to open it without a timer.", True),
-
     ("new_looks",       "New looks.",
      "there are skins here???",
      "Make a unique color, music & background combo.", True),
-
     ("hunters_dream",   "A Hunter's dream.",
      "did you hear anything?",
      "Set sound settings on \"silent\" and the sound Volume to 0.", True),
-
     ("sensory_overload","Sensory overload",
      "Secret way secret way",
      "Get a custom color/sound theme/background via events, codes or the devs.", True),
-
     ("pomodoro",        "Pomodoro would be proud",
      "Again & again & again",
      "Set up your 100th timer.", True),
-
     ("hidden_cameras",  "Hidden cameras",
      "I was stalked?!",
      "Check your history for the first time.", True),
-
     ("code_of_doom",    "The code of doom and despair",
      "GOD DAMN IT!",
      "Try to access a banned app through a rename/reposition.", True),
-
     ("buzzkill",        "Buzzkill!",
      "and how does that benefit me exactly?",
      "Set a timer for one second.", True),
-
     ("free_time",       "Free time",
      "im pretty sure I can play now",
      "Have a parent grant you a free day.", True),
-
     ("badass_parents",  "Badass parents",
      "THEY UNBLOCKED IT?",
      "Have a parent grant you access to a blocked app via \"unblock\".", True),
-
     ("cheat_code",      "Cheat code",
      "im tubers93!",
      "Close the app via main password.", True),
-
-    # --- НЕДОСТУПНЫЕ (пока что) ---
     ("bug_spray",       "Bug spray",
      "yeah man the President knows my name!",
      "Find a bug, report it to the Dev and hope for this to be given to you. (UNOBTAINABLE)", False),
-
     ("one_more_game",   "One more game",
      "she agreed! Open roblox!",
      "Have your parent discard a cooldown for you. (UNOBTAINABLE)", False),
-
     ("twentyfour",      "24 times right?",
      "I can finally see it after obtaining this body.",
      "Successfully play a blocked game and send the footage to a dev. (UNOBTAINABLE)", False),
-
     ("oh_baby_triple",  "Oh baby a triple!",
      "im just that good",
      "Get a clip of you winning, finishing or pulling a stunt in game with the timer running out right after you did it barely letting you win, then submit it into the official Productivity Breacher discord server. (UNOBTAINABLE)", False),
-
     ("how_unfortunate","How unfortunate...",
      "I was SO CLOSE!",
      "Be at the very end of a hard game, then get your app killed, then submit the clip to the official discord server. (UNOBTAINABLE)", False),
-
     ("limited_omni",    "Limited omnipotence",
      "I've been through worse.",
      "Win EVERY event that was ever announced in the history of PB. (UNOBTAINABLE)", False),
-
     ("unholy_spirits",  "Unholy spirits",
      "is this place haunted?",
      "Complete the Halloween event of 2026. (UNOBTAINABLE)", False),
-
     ("weather_fright",  "Weather frightful, fire delightful.",
      "its TIIII..... IIME!",
      "Complete the 2026 new year event. (UNOBTAINABLE)", False),
-
     ("ufo",             "It's a bird.. It's a plane... It's a UFO!",
      "and out of the sky... Like a flash..",
      "Complete the 2026 frog invasion event. (UNOBTAINABLE)", False),
-
     ("old_school",      "Old school.",
      "back to the future, huh?",
      "Have a developer grant you access to the oldest versions of the app. (UNOBTAINABLE)", False),
 ]
-
-# Какие достижения уже разблокированы
 unlocked_achievements = []
-
-# Всплывашка при разблокировке
-achievement_popup_queue = []       # очередь достижений на показ
-achievement_popup_current = None   # какое показывается сейчас
-achievement_popup_start = 0.0      # когда началась показ
-achievement_popup_duration = 3.5   # сколько секунд висит
+achievement_popup_queue = []
+achievement_popup_current = None
+achievement_popup_start = 0.0
+achievement_popup_duration = 3.5
+halloween_state = "waiting"
+halloween_timer = 0.0
+halloween_fly_offsets = [0.0] * 5
+halloween_event_active = False
+halloween_event_timer = 0.0
+bats_all_away = False
+hint_active = False
+hint_text = ""
+hint_shake_offset = 0
 
 
 def load_achievements():
-    """Загружает список разблокированных достижений из файла."""
     global unlocked_achievements
     if not os.path.exists(ACHIEVEMENTS_FILE):
         unlocked_achievements = []
@@ -754,7 +846,6 @@ def load_achievements():
         unlocked_achievements = []
 
 def load_signatures():
-    """Загружает сохранённые сигнатуры процессов."""
     global known_signatures
     if not os.path.exists(SIGNATURES_FILE):
         known_signatures = {}
@@ -766,86 +857,71 @@ def load_signatures():
     except (json.JSONDecodeError, OSError):
         known_signatures = {}
 
-
 def save_signatures():
-    """Сохраняет сигнатуры процессов в файл."""
     try:
         with open(SIGNATURES_FILE, "w", encoding="utf-8") as f:
             json.dump(known_signatures, f, ensure_ascii=False, indent=2)
-    except OSError as e:
-        filler_variable = True
+    except OSError:
+        pass
 
 def save_achievements():
-    """Сохраняет список разблокированных достижений в файл."""
     try:
         with open(ACHIEVEMENTS_FILE, "w", encoding="utf-8") as f:
             json.dump(unlocked_achievements, f, ensure_ascii=False, indent=2)
-    except OSError as e:
-        filler_variable = True
-
+    except OSError:
+        pass
 
 def get_achievement(ach_id):
-    """Возвращает кортеж достижения по id или None."""
     for ach in ACHIEVEMENTS:
         if ach[0] == ach_id:
             return ach
     return None
 
-
-def unlock_achievement(ach_id):
-    """Разблокирует достижение (если ещё не разблокировано). Показывает попап."""
+def unlock_achievement(ach_id, force=False):
     global achievement_popup_queue
-
     if ach_id in unlocked_achievements:
         return False
-
     ach = get_achievement(ach_id)
     if ach is None:
-        filler_variable = True
+        print(f"[ACHIEVEMENTS] Неизвестный id: {ach_id}")
         return False
-
-    # Проверка на (UNOBTAINABLE) — их нельзя получить автоматически
-    if not ach[4]:
-        filler_variable = True
+    if not ach[4] and not force:
         return False
-
     unlocked_achievements.append(ach_id)
     save_achievements()
-
-    # Добавляем в очередь на показ
     achievement_popup_queue.append(ach_id)
-
-    filler_variable = True
+    print(f"[ACHIEVEMENTS] Разблокировано: {ach[1]}")
     return True
-
 
 def try_activate_code(code):
-    """Пытается активировать код. Возвращает True при успехе."""
     global ACCENT, current_theme, timer_speed_mult, cooldown_speed_mult
-
-    if code not in VALID_CODES:
-        return False
-    if code in ACTIVATED_CODES:
-        return False
-
-    ACTIVATED_CODES.append(code)
-    save_codes()
-
-    if code in CODE_THEMES:
-        current_theme = code
-        ACCENT = CODE_THEMES[code]
-
-    if code == "IHateThis":
-        timer_speed_mult = 0.9
-        cooldown_speed_mult = 1.1
-
-    filler_variable = True
-    return True
+    if code in VALID_CODES:
+        if code in ACTIVATED_CODES:
+            return False
+        ACTIVATED_CODES.append(code)
+        save_codes()
+        if code in CODE_THEMES:
+            current_theme = code
+            ACCENT = CODE_THEMES[code]
+        if code == "IHateThis":
+            timer_speed_mult = 0.9
+            cooldown_speed_mult = 1.1
+        print(f"[CODES] Активирован код: {code}")
+        return True
+    if code in ACHIEVEMENT_CODES:
+        if code in ACTIVATED_CODES:
+            return False
+        ACTIVATED_CODES.append(code)
+        save_codes()
+        ach_id = ACHIEVEMENT_CODES[code]
+        unlock_achievement(ach_id, force=True)
+        print(f"[CODES] Активирован код достижения: {code} → {ach_id}")
+        return True
+    return False
 
 # ============================================================
 # FREE DAY
 # ============================================================
-
 def check_free_day():
     global free_day_active, free_day_date, can_play
     today = time.strftime("%d.%m.%Y")
@@ -853,16 +929,13 @@ def check_free_day():
         free_day_active = False
         free_day_date = ""
         can_play = False
-        filler_variable = True
 
 # ============================================================
-# WATCHDOG (блокировка приложений)
+# WATCHDOG
 # ============================================================
-
 import subprocess
 
 def get_safari_url():
-    """Возвращает URL активной вкладки Safari или None."""
     script = 'tell application "Safari" to get URL of current tab of front window'
     try:
         result = subprocess.run(
@@ -875,17 +948,13 @@ def get_safari_url():
         pass
     return None
 
-
 def is_blocked_site(url):
-    """Проверяет, есть ли запрещённый сайт в URL."""
     if not url:
         return False
     url_lower = url.lower()
     return any(site in url_lower for site in BLOCKED_SITES)
 
-
 def close_safari_tab():
-    """Закрывает активную вкладку Safari."""
     script = 'tell application "Safari" to close current tab of front window'
     try:
         subprocess.run(["osascript", "-e", script], capture_output=True, timeout=2)
@@ -905,10 +974,7 @@ def is_app_open():
     return False
 
 def check_signatures():
-    """Проверяет, изменились ли сигнатуры заблокированных процессов.
-    Возвращает True, если найдено изменение (rename/reposition)."""
     global known_signatures, signature_changed
-
     if not can_play:
         for proc in psutil.process_iter(['name', 'exe']):
             try:
@@ -916,31 +982,21 @@ def check_signatures():
                 exe = (proc.info['exe'] or "").lower()
                 if not name:
                     continue
-
-                # Ищем, к какому заблокированному приложению относится процесс
                 matched_app = None
                 for app in BLOCKED_APPS:
                     if app.lower() in name or app.lower() in exe:
                         matched_app = app
                         break
-
                 if matched_app is None:
                     continue
-
                 current_sig = {"name": name, "exe": exe}
-
-                # Если для этого приложения ещё нет базы — записываем и пропускаем
                 if matched_app not in known_signatures:
                     known_signatures[matched_app] = current_sig
                     save_signatures()
                     continue
-
-                # Сравниваем с базой
                 old_sig = known_signatures[matched_app]
                 if old_sig.get("name") != name or old_sig.get("exe") != exe:
-                    # Сигнатура изменилась → rename или reposition
                     signature_changed = True
-                    filler_variable = True
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
     return signature_changed
@@ -955,52 +1011,40 @@ def kill_apps():
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
 
-
 def watchdog():
     global signature_changed
-
     while True:
         check_free_day()
         if not can_play:
             check_signatures()
-
             if is_app_open():
                 was_changed = signature_changed
-
                 kill_apps()
                 progress_quest("app_killed")
-
                 if cooldown_active:
                     unlock_achievement("app_killed_cd")
                 else:
                     unlock_achievement("app_killed_free")
-
                 if was_changed:
                     unlock_achievement("code_of_doom")
                     signature_changed = False
-
-            # --- Проверка сайтов в Safari ---
             current_url = get_safari_url()
             if current_url and is_blocked_site(current_url):
                 print(f"[WEBSITE] Заблокирован: {current_url}")
                 close_safari_tab()
                 progress_quest("app_killed")
-
-        time.sleep(2)  # было 1, стало 2 (чтобы не спамить osascript)
+        time.sleep(2)
 
 # ============================================================
-# SOCKET SERVER
+# SOCKET SERVER  (fixed: single GET_PENDING handler, localhost)
 # ============================================================
-
 def handle_socket_command(data, conn):
-    """Обрабатывает одну команду сокета. Возвращает True, если соединение нужно закрыть."""
     global socket_conn, timer_input, state, timer_start, timer_seconds
     global can_play, current_fact, password, BLOCKED_APPS
     global cooldown_active, cooldown_end, timer_history
     global free_day_active, free_day_date
     global pending_request
 
-    # --- LOCK:<время> ---
     if data.startswith("LOCK:"):
         new_timer = data.split(":", 1)[1].strip()
         timer_input = new_timer
@@ -1022,59 +1066,49 @@ def handle_socket_command(data, conn):
                 })
                 save_history(timer_history)
                 progress_quest("timers_count")
-                filler_variable = True
-            else:
-                filler_variable = True
         except Exception as e:
-            filler_variable = True
+            print(f"[SOCKET] LOCK parse error: {e}")
 
-    # --- SETPASSWORD:<пароль> ---
     elif data.startswith("SETPASSWORD:"):
         password = data.split(":", 1)[1]
-        filler_variable = True
 
-    # --- CLOSE:<пароль> ---
     elif data.startswith("CLOSE:"):
         entered = data.split(":", 1)[1]
         if entered == password:
-            filler_variable = True
             pygame.quit()
             sys.exit()
-        else:
-            filler_variable = True
 
-    # --- BLOCK:<имя приложения> ---
     elif data.startswith("BLOCK:"):
         app_name = data.split(":", 1)[1].strip()
         if app_name and app_name not in BLOCKED_APPS:
             BLOCKED_APPS.append(app_name)
-        filler_variable = True
 
-    # --- UNBLOCK:<имя приложения> ---
     elif data.startswith("UNBLOCK:"):
         app_name = data.split(":", 1)[1].strip()
         if app_name in BLOCKED_APPS:
             BLOCKED_APPS.remove(app_name)
-        filler_variable = True
         unlock_achievement("badass_parents")
 
     elif data == "GET_PENDING":
         print(f"[SOCKET] GET_PENDING, pending_request={pending_request}")
-        if pending_request:
-            conn.sendall(f"PENDING:{pending_request}".encode())
-        else:
-            conn.sendall(b"PENDING:NONE")
+        try:
+            if pending_request:
+                conn.sendall(f"PENDING:{pending_request}".encode())
+            else:
+                conn.sendall(b"PENDING:NONE")
+        except Exception as e:
+            print(f"[SOCKET] send PENDING failed: {e}")
 
-    # --- GET_HISTORY ---
     elif data == "GET_HISTORY":
-        lines = ["HISTORY_START"]
-        for entry in timer_history:
-            lines.append(f"{entry['duration']}|{entry.get('time', '?')}")
-        lines.append("HISTORY_END")
-        response = "\n".join(lines)
-        conn.sendall(response.encode())
+        try:
+            lines = ["HISTORY_START"]
+            for entry in timer_history:
+                lines.append(f"{entry.get('duration', '?')}|{entry.get('time', '?')}")
+            lines.append("HISTORY_END")
+            conn.sendall("\n".join(lines).encode())
+        except Exception as e:
+            print(f"[SOCKET] send HISTORY failed: {e}")
 
-    # --- DISCARD ---
     elif data == "DISCARD":
         cooldown_end = 0
         cooldown_active = False
@@ -1084,14 +1118,7 @@ def handle_socket_command(data, conn):
             current_fact = ""
         print("[SOCKET] Кулдаун сброшен.")
 
-    elif data == "GET_PENDING":
-        if pending_request:
-            conn.sendall(f"PENDING:{pending_request}".encode())
-        else:
-            conn.sendall(b"PENDING:NONE")
-
     elif data == "DISCARD_ACCEPT":
-        # Родитель одобрил сброс кулдауна
         cooldown_end = 0
         cooldown_active = False
         if state == "cooldown":
@@ -1117,35 +1144,36 @@ def handle_socket_command(data, conn):
         pending_request = None
         print("[SOCKET] Родитель отклонил Free Day.")
 
-    # --- FREE_DAY ---
     elif data == "FREE_DAY":
         free_day_active = True
         free_day_date = time.strftime("%d.%m.%Y")
         can_play = True
-        filler_variable = True
         unlock_achievement("free_time")
 
     return False
 
 
 def socket_server():
-    """Принимает команды от родительского приложения (controller)."""
+    """Accept commands from parent. Binds to 0.0.0.0 so localhost always works."""
     global socket_conn
 
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind(("127.0.0.1", SESSION_PORT))
-    srv.listen(1)
-    print(f"[SOCKET] Сервер запущен на 127.0.0.1:{SESSION_PORT}")
+    srv.bind(("0.0.0.0", SESSION_PORT))
+    srv.listen(5)
+    print(f"[SOCKET] Сервер запущен на 0.0.0.0:{SESSION_PORT}")
 
     while True:
-        conn, addr = srv.accept()
+        try:
+            conn, addr = srv.accept()
+        except Exception as e:
+            print(f"[SOCKET] accept failed: {e}")
+            continue
         socket_conn = conn
 
-        # --- АВТОРИЗАЦИЯ ---
         try:
             auth_data = conn.recv(1024).decode()
-            # Может прийти несколько строк: AUTH\nCOMMAND
+            print(f"[SOCKET] raw={auth_data!r}")
             lines = auth_data.split("\n")
             auth_msg = lines[0].strip()
 
@@ -1155,23 +1183,23 @@ def socket_server():
                 socket_conn = None
                 continue
 
-            # Если в буфере уже есть команда — обрабатываем её сразу
             for extra in lines[1:]:
                 extra = extra.strip()
                 if extra:
+                    print(f"[SOCKET] cmd={extra!r}")
                     handle_socket_command(extra, conn)
-        except Exception as e:
-            print(f"[SOCKET] Ошибка авторизации: {e}")
-            conn.close()
-            socket_conn = None
-            continue
 
-        # --- ОСНОВНОЙ ЦИКЛ ---
-        try:
+            # Keep the connection alive for a little while in case
+            # the client sends more commands on it (parent does one-shot, but safe).
+            conn.settimeout(0.5)
             while True:
-                data = conn.recv(1024).decode().strip()
+                try:
+                    data = conn.recv(1024).decode().strip()
+                except socket.timeout:
+                    break
                 if not data:
                     break
+                print(f"[SOCKET] cmd={data!r}")
                 handle_socket_command(data, conn)
         except Exception as e:
             print(f"[SOCKET] Ошибка: {e}")
@@ -1182,19 +1210,17 @@ def socket_server():
                 pass
             socket_conn = None
 
-# ============================================================
-# ЗВУК
-# ============================================================
 
+# ============================================================
+# SOUND ENGINE
+# ============================================================
 def play_tone(freq, duration, vol=0.5, wave_type="sine"):
     if freq <= 0:
         time.sleep(duration)
         return
-
     sample_rate = 44100
     n_samples = int(sample_rate * duration)
     t_arr = np.arange(n_samples) / sample_rate
-
     if wave_type == "sine":
         wave = np.sin(2 * np.pi * freq * t_arr)
     elif wave_type == "square":
@@ -1203,20 +1229,15 @@ def play_tone(freq, duration, vol=0.5, wave_type="sine"):
         wave = 2 * (t_arr * freq - np.floor(t_arr * freq + 0.5))
     else:
         wave = np.sin(2 * np.pi * freq * t_arr)
-
-    # Плавное появление / затухание, чтобы не было щелчков
     envelope = np.ones(n_samples)
     fade = int(sample_rate * 0.02)
     if fade > 0 and n_samples > fade * 2:
         envelope[:fade] = np.linspace(0, 1, fade)
         envelope[-fade:] = np.linspace(1, 0, fade)
-
     buf = (wave * envelope * vol * (volume / 100) * 32767).astype(np.int16)
     sound = pygame.sndarray.make_sound(np.column_stack((buf, buf)))
     sound.play()
 
-
-# Каждая звуковая тема = список нот для конца таймера и для конца кулдауна
 SOUND_PATTERNS = {
     "Классика": {
         "timer":    [(523, 0.25, 0.30, "square"), (659, 0.25, 0.30, "square"), (784, 0.25, 0.30, "square")],
@@ -1240,13 +1261,11 @@ SOUND_PATTERNS = {
     },
 }
 
-
 def _play_rain(loops, freq_min, freq_max, duration, vol):
     for _ in range(loops):
         freq = random.randint(freq_min, freq_max)
         play_tone(freq, duration, vol, "sine")
         time.sleep(0.03)
-
 
 def sound_timer_end():
     if current_sound_theme == "Тишина":
@@ -1260,7 +1279,6 @@ def sound_timer_end():
     for note in pattern:
         play_tone(*note)
         time.sleep(0.02)
-
 
 def sound_cooldown_end():
     if current_sound_theme == "Тишина":
@@ -1276,18 +1294,100 @@ def sound_cooldown_end():
         time.sleep(0.02)
 
 # ============================================================
-# ЗАГРУЗКА ДАННЫХ И СТАРТ ПОТОКОВ
+# HALLOWEEN: WIRE WITH BATS
 # ============================================================
+halloween_bats_order = []
+halloween_bats_clicked = []
+halloween_bats_correct = []
+halloween_active = False
 
+def init_halloween_bats():
+    global halloween_bats_order, halloween_bats_clicked, halloween_bats_correct
+    halloween_bats_order = list(range(5))
+    random.shuffle(halloween_bats_order)
+    halloween_bats_clicked = []
+    halloween_bats_correct = []
+    print(f"[HALLOWEEN] Порядок мышей: {halloween_bats_order}")
+
+def get_wire_points(w, h):
+    margin = 20
+    wire_y = 40
+    sag = 25
+    segments = 60
+    points = []
+    for i in range(segments + 1):
+        t = i / segments
+        x = margin + t * (w - 2 * margin)
+        y = wire_y + sag * 4 * t * (1 - t)
+        points.append((x, y))
+    return points
+
+def draw_halloween_wire(surface, w, h):
+    if not halloween_active:
+        return
+    points = get_wire_points(w, h)
+    pygame.draw.lines(surface, (60, 60, 60), False, points, 3)
+    if halloween_state == "gone":
+        return
+    for i in range(5):
+        t = (i + 0.5) / 5
+        margin = 20
+        sag = 25
+        x = margin + t * (w - 2 * margin)
+        y = 40 + sag * 4 * t * (1 - t)
+        if halloween_state in ("flying_away", "flying_back"):
+            off_x = halloween_fly_offsets[i]
+            off_y = -abs(halloween_fly_offsets[i]) * 0.5
+        else:
+            off_x = 0
+            off_y = 0
+        draw_bat(surface, x, y + 8, i, off_x, off_y)
+
+def get_bat_rects(w, h):
+    margin = 20
+    sag = 25
+    rects = []
+    for i in range(5):
+        t = (i + 0.5) / 5
+        x = margin + t * (w - 2 * margin)
+        y = 40 + sag * 4 * t * (1 - t)
+        rects.append(pygame.Rect(x - 25, y - 10 + 8, 50, 40))
+    return rects
+
+def draw_bat(surface, x, y, index, offset_x=0, offset_y=0):
+    x = x + offset_x
+    y = y + offset_y
+    if index in halloween_bats_correct:
+        color = (220, 50, 50)
+    else:
+        color = (40, 40, 40)
+    pygame.draw.ellipse(surface, color, (x - 8, y - 5, 16, 12))
+    pygame.draw.polygon(surface, color, [
+        (x - 4, y - 2), (x - 22, y - 12), (x - 18, y + 2), (x - 4, y + 3)
+    ])
+    pygame.draw.polygon(surface, color, [
+        (x + 4, y - 2), (x + 22, y - 12), (x + 18, y + 2), (x + 4, y + 3)
+    ])
+    pygame.draw.polygon(surface, color, [(x - 5, y - 5), (x - 3, y - 10), (x - 1, y - 5)])
+    pygame.draw.polygon(surface, color, [(x + 1, y - 5), (x + 3, y - 10), (x + 5, y - 5)])
+    pygame.draw.circle(surface, (255, 255, 255), (x - 3, y - 1), 2)
+    pygame.draw.circle(surface, (255, 255, 255), (x + 3, y - 1), 2)
+# ============================================================
+# FUNCTION CALLS
+# ============================================================
 ensure_timers_file()
 timer_history = load_history()
 load_quests()
 generate_quests()
 load_codes()
+halloween_active = True
+init_halloween_bats()
+halloween_state = "waiting"
+halloween_timer = 0.0
+halloween_fly_offsets = [0.0] * 5
 load_achievements()
 load_signatures()
 
-# Если активирован код темы — применить её при старте
 for code in ["Snakey", "PartyLaws", "MyMommaStrict", "CameFromGithub"]:
     if code in ACTIVATED_CODES:
         current_theme = code
@@ -1300,15 +1400,12 @@ if "IHateThis" in ACTIVATED_CODES:
 
 threading.Thread(target=watchdog, daemon=True).start()
 threading.Thread(target=socket_server, daemon=True).start()
-# Запускаем фоновую музыку текущей темы
 play_background_music(current_sound_theme)
-# Достижение "Welcome" — при первом запуске
 threading.Timer(1.0, lambda: unlock_achievement("welcome")).start()
 
 # ============================================================
-# ФУНКЦИИ ОТРИСОВКИ
+# DRAWINGS
 # ============================================================
-
 def draw_text_with_outline(surface, text, font, center, color, outline_color, outline_width=2):
     base = font.render(text, True, color)
     outline = font.render(text, True, outline_color)
@@ -1319,24 +1416,18 @@ def draw_text_with_outline(surface, text, font, center, color, outline_color, ou
                 surface.blit(outline, outline.get_rect(center=(x + dx, y + dy)))
     surface.blit(base, base.get_rect(center=(x, y)))
 
-
 def draw_pattern(surface, w, h):
     global anim_offset
-
     if animate_pattern:
         anim_offset += 0.15
-
     size = 40
-
     if current_pattern == "Пусто":
         if animate_pattern:
             pulse = (math.sin(time.time() * 0.5) + 1) / 2
             shade = int(240 + (200 - 240) * pulse)
             surface.fill((shade, shade, shade))
         return
-
     pattern_color = WHITE if invert_pattern else GRAY_SOFT
-
     if current_pattern == "Точки":
         if animate_pattern:
             radius = max(1, int(3 + 2 * math.sin(time.time() * 2)))
@@ -1346,9 +1437,7 @@ def draw_pattern(surface, w, h):
             for y in range(0, h, size):
                 pygame.draw.circle(surface, pattern_color, (x + size // 2, y + size // 2), radius)
         return
-
     offset = anim_offset % size if animate_pattern else 0
-
     for x in range(-size, w + size, size):
         for y in range(0, h, size):
             x_shifted = x - offset
@@ -1366,7 +1455,6 @@ def draw_pattern(surface, w, h):
                     (cx - size // 2, cy),
                 ])
 
-
 def draw_fact(surface, w, h, fact):
     if not fact:
         return
@@ -1380,20 +1468,17 @@ def draw_fact(surface, w, h, fact):
             lines.append(line)
             line = word + " "
     lines.append(line)
-
     y = h - 120
     for line in lines:
         text = font_tiny.render(line.strip(), True, GRAY_TEXT)
         surface.blit(text, text.get_rect(center=(w // 2, y)))
         y += 28
 
-
 def draw_note(surface, w, h, note):
     if not note:
         return
     text = font_small.render(note, True, TEXT_COLOR)
     surface.blit(text, text.get_rect(center=(w // 2, 60)))
-
 
 def draw_cross(surface, w, h, scale, alpha, shake_x, shake_y):
     size = int(200 * scale)
@@ -1407,7 +1492,6 @@ def draw_cross(surface, w, h, scale, alpha, shake_x, shake_y):
     cross_surf = pygame.transform.rotate(cross_surf, 45)
     surface.blit(cross_surf, cross_surf.get_rect(center=(w // 2 + shake_x, h // 2 + shake_y)))
 
-
 def draw_gear(surface, x, y, r, color):
     pygame.draw.circle(surface, color, (x, y), r)
     pygame.draw.circle(surface, WHITE, (x, y), r - 5)
@@ -1418,7 +1502,6 @@ def draw_gear(surface, x, y, r, color):
         gy = y + int(math.sin(angle) * r)
         pygame.draw.circle(surface, color, (gx, gy), 4)
 
-
 def draw_options_icon(surface, x, y, r, color):
     for i in range(3):
         yy = y - r + i * (r * 0.7) + 4
@@ -1426,13 +1509,15 @@ def draw_options_icon(surface, x, y, r, color):
         pygame.draw.rect(surface, BLACK, (x - r + 4, yy, r * 2 - 8, int(r * 0.5)), 2, border_radius=3)
         pygame.draw.circle(surface, WHITE, (x - r + 8, yy + 3), 2)
 
-
 def draw_close_button(surface, w):
     cx, cy = w - 55, 105
     pygame.draw.line(surface, BLACK, (cx - 12, cy - 12), (cx + 12, cy + 12), 3)
     pygame.draw.line(surface, BLACK, (cx + 12, cy - 12), (cx - 12, cy + 12), 3)
     return (cx, cy, 20)
 
+# ============================================================
+# MAIN LOOP
+# ============================================================
 running = True
 while running:
     w, h = screen.get_size()
@@ -1447,15 +1532,11 @@ while running:
     note_btn_y = h // 2
     note_panel_w = int(note_panel_total_w * note_slide)
 
-    # ========================================================
-    # ОБРАБОТКА СОБЫТИЙ
-    # ========================================================
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             if state == "closing":
                 running = False
 
-        # --- ВВОД С КЛАВИАТУРЫ ---
         if event.type == pygame.KEYDOWN:
             if note_active:
                 if event.key == pygame.K_BACKSPACE:
@@ -1464,13 +1545,13 @@ while running:
                     note_active = False
                     current_note = note_text
                     note_used = True
-                    filler_variable = True
                 elif event.key == pygame.K_ESCAPE:
                     note_active = False
                     note_text = ""
                     note_used = True
                 elif event.unicode and event.unicode.isprintable() and len(note_text) < 40:
                     note_text += event.unicode
+
             elif menu_state == "codes":
                 if event.key == pygame.K_BACKSPACE:
                     code_input = code_input[:-1]
@@ -1481,7 +1562,6 @@ while running:
                             code_message = f"Activated: {entered}"
                             code_message_ok = True
                             code_message_until = time.time() + 2.5
-                            # Проверка "Sensory overload" — если код дал тему
                             if entered in CODE_THEMES:
                                 unlock_achievement("sensory_overload")
                         else:
@@ -1491,13 +1571,92 @@ while running:
                     code_input = ""
                 elif event.unicode and event.unicode.isprintable() and len(code_input) < 32:
                     code_input += event.unicode
+
             elif state == "input" and menu_state == "closed":
                 if event.key == pygame.K_BACKSPACE:
                     timer_input = timer_input[:-1]
+                elif event.key == pygame.K_RETURN:
+                    if timer_input == "666":
+                        timer_input = ""
+                        if bats_all_away:
+                            for base in [
+                                os.path.expanduser("~/Desktop"),
+                                os.path.expanduser("~/Documents"),
+                                os.path.expanduser("~/Downloads"),
+                            ]:
+                                if not os.path.exists(base):
+                                    continue
+                                for root, dirs, files in os.walk(base):
+                                    for f in files:
+                                        if f.startswith("pb_"):
+                                            try:
+                                                os.remove(os.path.join(root, f))
+                                            except Exception:
+                                                pass
+                            last_halloween_check = 0.0
+                            halloween_active = True
+                            init_halloween_bats()
+                            halloween_state = "waiting"
+                            halloween_timer = 0.0
+                            halloween_fly_offsets = [0.0] * 5
+                            halloween_event_active = True
+                            halloween_event_timer = time.time() + 90
+                            spawn_halloween_files()
+                            state = "input"
+                            print("[HALLOWEEN] Ивент запущен! 30 секунд. Ищи 6 файлов.")
+                        else:
+                            print("[HALLOWEEN] Сначала найди всех мышей!")
+                    elif timer_input == password:
+                        state = "closing"
+                        timer_input = ""
+                        close_start = time.time()
+                        unlock_achievement("cheat_code")
+                    elif timer_input:
+                        if try_activate_code(timer_input):
+                            if timer_input in CODE_THEMES:
+                                unlock_achievement("sensory_overload")
+                            timer_input = ""
+                        else:
+                            try:
+                                num = int(timer_input[:-1])
+                                unit = timer_input[-1]
+                                secs = num if unit == "s" else num * 60 if unit == "m" else num * 3600
+                                if secs > 7200:
+                                    error_until = time.time() + 2
+                                    timer_input = ""
+                                elif secs > 0:
+                                    entered = timer_input
+                                    state = "timer"
+                                    timer_start = time.time()
+                                    timer_seconds = secs
+                                    timer_input = ""
+                                    can_play = True
+                                    cooldown_active = False
+                                    current_fact = random.choice(FACTS)
+                                    timer_history.append({
+                                        "duration": entered,
+                                        "time": time.strftime("%H:%M"),
+                                        "note": current_note,
+                                    })
+                                    save_history(timer_history)
+                                    progress_quest("timers_count")
+                                    unlock_achievement("first_timer")
+                                    if secs == 1:
+                                        unlock_achievement("buzzkill")
+                                    if len(timer_history) >= 100:
+                                        unlock_achievement("pomodoro")
+                            except Exception:
+                                pass
+                elif event.key == pygame.K_v and (pygame.key.get_mods() & pygame.KMOD_META):
+                    try:
+                        pasted = subprocess.check_output(["pbpaste"]).decode("utf-8", errors="ignore").strip()
+                        if pasted:
+                            timer_input = (timer_input + pasted)[:32]
+                    except Exception as e:
+                        print(f"[PASTE] Ошибка: {e}")
                 elif event.unicode and event.unicode.isprintable() and len(timer_input) < 32:
                     timer_input += event.unicode
 
-        # --- КОЛЕСО МЫШИ ---
         if event.type == pygame.MOUSEWHEEL:
             if menu_state == "sound":
                 sound_scroll -= event.y * 30
@@ -1507,13 +1666,32 @@ while running:
                 ach_scroll -= event.y * 40
                 max_scroll = max(0, len(ACHIEVEMENTS) * 83 - 350)
                 ach_scroll = max(0, min(ach_scroll, max_scroll))
+            elif menu_state == "themes":
+                theme_scroll -= event.y * 30
+                max_scroll = max(0, len(get_available_themes()) * 65 - 350)
+                theme_scroll = max(0, min(theme_scroll, max_scroll))
 
-        # --- КЛИК МЫШИ ---
         if event.type == pygame.MOUSEBUTTONDOWN:
-            if state == "input" and menu_state == "closed" and not note_active and not note_used:
-                if event.pos[0] > w - 50 and abs(event.pos[1] - note_btn_y) < note_panel_h:
-                    note_active = True
-                    continue
+            if halloween_active and halloween_state == "waiting":
+                bat_rects = get_bat_rects(w, h)
+                for i, rect in enumerate(bat_rects):
+                    if rect.collidepoint(event.pos):
+                        if i not in halloween_bats_clicked and i not in halloween_bats_correct:
+                            next_index = len(halloween_bats_correct)
+                            if halloween_bats_order[next_index] == i:
+                                halloween_bats_correct.append(i)
+                                threading.Thread(target=play_tone, args=(880, 0.1, 0.3, "sine"), daemon=True).start()
+                                if len(halloween_bats_correct) == 5:
+                                    bats_all_away = True
+                                    halloween_state = "flying_away"
+                                    halloween_fly_offsets = [0.0] * 5
+                                    halloween_timer = time.time() + 600
+                                    spawn_halloween_files()
+                            else:
+                                halloween_bats_correct = []
+                                halloween_bats_clicked = []
+                                threading.Thread(target=play_tone, args=(200, 0.3, 0.4, "saw"), daemon=True).start()
+                        break
 
             if state == "cooldown" and request_btn_rect is not None:
                 if request_btn_rect.collidepoint(event.pos):
@@ -1527,6 +1705,7 @@ while running:
             if (event.pos[0] - gear_pos[0]) ** 2 + (event.pos[1] - gear_pos[1]) ** 2 <= gear_radius ** 2:
                 menu_state = "closed" if menu_state != "closed" else "list"
                 sound_scroll = 0
+                theme_scroll = 0
 
             elif (event.pos[0] - options_pos[0]) ** 2 + (event.pos[1] - options_pos[1]) ** 2 <= options_radius ** 2:
                 menu_state = "closed" if menu_state != "closed" else "options_list"
@@ -1536,6 +1715,7 @@ while running:
                 if (event.pos[0] - close_rect[0]) ** 2 + (event.pos[1] - close_rect[1]) ** 2 <= close_rect[2] ** 2:
                     menu_state = "list" if menu_state != "list" else "closed"
                     sound_scroll = 0
+                    theme_scroll = 0
 
                 elif menu_state == "options_list":
                     if 60 < event.pos[0] < w - 60 and 180 < event.pos[1] < 235:
@@ -1561,6 +1741,7 @@ while running:
                         if 60 < event.pos[0] < w - 60 and y_pos < event.pos[1] < y_pos + 55:
                             menu_state = key
                             sound_scroll = 0
+                            theme_scroll = 0
 
                 elif menu_state == "history":
                     if 60 < event.pos[0] < w - 60 and h - 80 < event.pos[1] < h - 35:
@@ -1587,35 +1768,27 @@ while running:
                                     if name != current_sound_theme:
                                         progress_quest("sound_changed")
                                     current_sound_theme = name
-                                    print(f"[SOUND] Тема: {name}")
                                     threading.Thread(target=play_tone, args=(660, 0.08, 0.2, "sine"), daemon=True).start()
-
-                                    # Меняем фоновую музыку
                                     play_background_music(current_sound_theme)
-
-                                    # --- Достижения ---
                                     if (current_theme != "Классика"
                                         and current_sound_theme != "Классика"
                                         and current_pattern != "Шахматка"):
                                         unlock_achievement("new_looks")
-
                                     if current_sound_theme == "Тишина" and volume == 0:
                                         unlock_achievement("hunters_dream")
                                 list_y += 45
 
                 elif menu_state == "themes":
-                    ty = 200
+                    ty = 200 - theme_scroll
                     available = get_available_themes()
                     for name in available:
-                        if 100 < event.pos[0] < 400 and ty < event.pos[1] < ty + 50:
+                        if 100 < event.pos[0] < 400 and ty < event.pos[1] < ty + 50 and 190 < event.pos[1] < h - 160:
                             if name != current_theme:
                                 progress_quest("color_changed")
                             current_theme = name
                             ACCENT = available[name]
-
                             if name in CODE_THEMES:
                                 unlock_achievement("sensory_overload")
-
                             if (current_theme != "Классика"
                                 and current_sound_theme != "Классика"
                                 and current_pattern != "Шахматка"):
@@ -1635,7 +1808,6 @@ while running:
                     for name in PATTERNS:
                         if 100 < event.pos[0] < 400 and ty < event.pos[1] < ty + 45:
                             current_pattern = name
-
                             if (current_theme != "Классика"
                                 and current_sound_theme != "Классика"
                                 and current_pattern != "Шахматка"):
@@ -1655,16 +1827,46 @@ while running:
 
             elif state == "input" and not note_active:
                 if (event.pos[0] - button_center[0]) ** 2 + (event.pos[1] - button_center[1]) ** 2 <= 80 ** 2:
-                    if timer_input == password:
+                    if timer_input == "666":
+                        timer_input = ""
+                        if bats_all_away:
+                            for base in [
+                                os.path.expanduser("~/Desktop"),
+                                os.path.expanduser("~/Documents"),
+                                os.path.expanduser("~/Downloads"),
+                            ]:
+                                if not os.path.exists(base):
+                                    continue
+                                for root, dirs, files in os.walk(base):
+                                    for f in files:
+                                        if f.startswith("pb_"):
+                                            try:
+                                                os.remove(os.path.join(root, f))
+                                            except Exception:
+                                                pass
+                            last_halloween_check = 0.0
+                            halloween_active = True
+                            init_halloween_bats()
+                            halloween_state = "waiting"
+                            halloween_timer = 0.0
+                            halloween_fly_offsets = [0.0] * 5
+                            halloween_event_active = True
+                            halloween_event_timer = time.time() + 90
+                            spawn_halloween_files()
+                            state = "input"
+                            print("[HALLOWEEN] Ивент запущен! 30 секунд. Ищи 6 файлов.")
+                        else:
+                            print("[HALLOWEEN] Сначала найди всех мышей!")
+                    elif timer_input == password:
                         state = "closing"
                         timer_input = ""
                         close_start = time.time()
                         unlock_achievement("cheat_code")
                     elif timer_input:
                         if try_activate_code(timer_input):
-                            timer_input = ""
                             if timer_input in CODE_THEMES:
                                 unlock_achievement("sensory_overload")
+                            timer_input = ""
                         else:
                             try:
                                 num = int(timer_input[:-1])
@@ -1689,8 +1891,6 @@ while running:
                                     })
                                     save_history(timer_history)
                                     progress_quest("timers_count")
-
-                                    # --- Достижения ---
                                     unlock_achievement("first_timer")
                                     if secs == 1:
                                         unlock_achievement("buzzkill")
@@ -1710,9 +1910,8 @@ while running:
                 unlock_achievement("hunters_dream")
 
     # ========================================================
-    # ЛОГИКА (НЕ СОБЫТИЯ)
+    # LOGIC
     # ========================================================
-
     if note_active:
         note_slide = min(1.0, note_slide + 0.15)
     else:
@@ -1721,10 +1920,78 @@ while running:
     if free_day_request_pending and time.time() > free_day_popup_until:
         free_day_request_pending = False
 
-    # --- Анимация креста ---
+    if halloween_active:
+        if halloween_state == "flying_away":
+            done = True
+            for i in range(5):
+                halloween_fly_offsets[i] += 8
+                if halloween_fly_offsets[i] < w:
+                    done = False
+            if done:
+                halloween_state = "gone"
+        elif halloween_state == "gone":
+            if time.time() >= halloween_timer:
+                halloween_state = "flying_back"
+                halloween_fly_offsets = [-w] * 5
+        elif halloween_state == "flying_back":
+            done = True
+            for i in range(5):
+                halloween_fly_offsets[i] += 8
+                if halloween_fly_offsets[i] < 0:
+                    done = False
+            if done:
+                halloween_state = "waiting"
+                halloween_fly_offsets = [0.0] * 5
+                halloween_bats_correct = []
+                halloween_bats_order = list(range(5))
+                random.shuffle(halloween_bats_order)
+
+    if halloween_event_active:
+        remaining_event = halloween_event_timer - time.time()
+        files_left = count_halloween_files()
+        now_check = time.time()
+        if now_check - last_halloween_check > 0.5:
+            last_halloween_check = now_check
+            if files_left == 0:
+                halloween_event_active = False
+                halloween_active = False
+                halloween_state = "gone"
+                unlock_achievement("unholy_spirits", force=True)
+                cooldown_seconds = 1200
+                cooldown_end = time.time() + cooldown_seconds
+                can_play = False
+                cooldown_active = True
+                current_fact = random.choice(FACTS)
+                threading.Thread(target=sound_timer_end, daemon=True).start()
+                cross_phase = "falling"
+                cross_scale = 0.0
+                cross_alpha = 255
+                pending_state_after_cross = "cooldown"
+                note_used = False
+            elif remaining_event <= 0:
+                halloween_event_active = False
+                halloween_active = False
+                halloween_state = "gone"
+                for base in [
+                    os.path.expanduser("~/Desktop"),
+                    os.path.expanduser("~/Documents"),
+                    os.path.expanduser("~/Downloads"),
+                ]:
+                    if not os.path.exists(base):
+                        continue
+                    for root, dirs, files in os.walk(base):
+                        for f in files:
+                            if f.startswith("pb_"):
+                                try:
+                                    os.remove(os.path.join(root, f))
+                                except Exception:
+                                    pass
+                halloween_state = "flying_away"
+                halloween_fly_offsets = [0.0] * 5
+                halloween_timer = time.time() + 600
+
     if cross_phase != "idle":
         now_cross = time.time()
-
         if cross_phase == "falling":
             cross_scale += 0.08
             if cross_scale >= 1.0:
@@ -1736,14 +2003,12 @@ while running:
                 if pending_state_after_cross is not None:
                     state = pending_state_after_cross
                     pending_state_after_cross = None
-
         elif cross_phase == "shaking":
             elapsed_shake = now_cross - cross_start
             cross_shake = max(0, int(10 * (1 - elapsed_shake / 0.4)))
             if elapsed_shake >= 0.4:
                 cross_phase = "dissolving"
                 cross_start = now_cross
-
         elif cross_phase == "dissolving":
             elapsed_dis = now_cross - cross_start
             cross_alpha = max(0, int(255 * (1 - elapsed_dis / 1.2)))
@@ -1753,7 +2018,6 @@ while running:
                 cross_alpha = 255
                 cross_shake = 0
 
-    # --- Таймер: конец -> кулдаун ---
     if state == "timer":
         elapsed = (time.time() - timer_start) * timer_speed_mult
         remaining = max(0, int(timer_seconds - elapsed))
@@ -1770,13 +2034,11 @@ while running:
             cross_alpha = 255
             pending_state_after_cross = "cooldown"
             note_used = False
-
             unlock_achievement("first_cooldown")
 
     # ========================================================
-    # ОТРИСОВКА
+    # RENDER
     # ========================================================
-
     screen.fill(WHITE)
     draw_pattern(screen, w, h)
 
@@ -1788,14 +2050,15 @@ while running:
     draw_gear(screen, gear_pos[0], gear_pos[1], gear_radius, ACCENT)
     draw_options_icon(screen, options_pos[0], options_pos[1], options_radius, ACCENT)
 
-    # --- Всплывашка достижения ---
+    if halloween_active:
+        draw_halloween_wire(screen, w, h)
+
     if achievement_popup_current is None and achievement_popup_queue:
         achievement_popup_current = achievement_popup_queue.pop(0)
         achievement_popup_start = time.time()
 
     if achievement_popup_current is not None:
         elapsed_pop = time.time() - achievement_popup_start
-
         if elapsed_pop < 0.4:
             slide = elapsed_pop / 0.4
         elif elapsed_pop < achievement_popup_duration - 0.4:
@@ -1805,34 +2068,27 @@ while running:
         else:
             achievement_popup_current = None
             slide = 0.0
-
         if achievement_popup_current is not None and slide > 0:
             ach = get_achievement(achievement_popup_current)
             if ach:
                 popup_w, popup_h = 320, 80
                 popup_x = -popup_w + int((popup_w + 20) * slide)
                 popup_y = 20
-
                 popup_rect = pygame.Rect(popup_x, popup_y, popup_w, popup_h)
                 pygame.draw.rect(screen, WHITE, popup_rect, border_radius=10)
                 pygame.draw.rect(screen, ACCENT, popup_rect, 3, border_radius=10)
-
                 trophy_x = popup_x + 35
                 trophy_y = popup_y + popup_h // 2
                 pygame.draw.circle(screen, ACCENT, (trophy_x, trophy_y), 18)
                 pygame.draw.circle(screen, WHITE, (trophy_x, trophy_y), 14)
                 pygame.draw.circle(screen, ACCENT, (trophy_x, trophy_y), 10)
-
                 head = font_tiny.render("Achievement Unlocked", True, GRAY_TEXT)
                 screen.blit(head, (popup_x + 65, popup_y + 10))
-
                 name_t = font_small.render(ach[1], True, BLACK)
                 screen.blit(name_t, (popup_x + 65, popup_y + 30))
-
                 quote_t = font_tiny.render(f'"{ach[2]}"', True, GRAY_TEXT)
                 screen.blit(quote_t, (popup_x + 65, popup_y + 55))
 
-    # --- Наложения поверх всего ---
     if free_day_request_pending:
         popup_rect = pygame.Rect(60, h // 2 - 40, w - 120, 80)
         pygame.draw.rect(screen, WHITE, popup_rect, border_radius=12)
@@ -1843,11 +2099,9 @@ while running:
         screen.blit(msg2, msg2.get_rect(center=(w // 2, h // 2 + 20)))
 
     elif cross_phase != "idle":
-        draw_cross(
-            screen, w, h, cross_scale, cross_alpha,
-            random.randint(-cross_shake, cross_shake),
-            random.randint(-cross_shake, cross_shake),
-        )
+        draw_cross(screen, w, h, cross_scale, cross_alpha,
+                   random.randint(-cross_shake, cross_shake),
+                   random.randint(-cross_shake, cross_shake))
 
     elif menu_state != "closed":
         pygame.draw.rect(screen, WHITE, (30, 80, w - 60, h - 160), border_radius=12)
@@ -1867,12 +2121,10 @@ while running:
         elif menu_state == "options_list":
             title = font_big.render(t("options"), True, BLACK)
             screen.blit(title, title.get_rect(center=(w // 2, 120)))
-
             pygame.draw.rect(screen, WHITE_DARK, (60, 180, w - 120, 55), border_radius=8)
             pygame.draw.rect(screen, ACCENT, (60, 180, w - 120, 55), 2, border_radius=8)
             text = font_mid.render(t("history"), True, BLACK)
             screen.blit(text, text.get_rect(center=(w // 2, 208)))
-
             pygame.draw.rect(screen, WHITE_DARK, (60, 250, w - 120, 55), border_radius=8)
             if free_day_request_pending:
                 fd_color = YELLOW
@@ -1881,27 +2133,22 @@ while running:
             else:
                 fd_color = ACCENT
             pygame.draw.rect(screen, fd_color, (60, 250, w - 120, 55), 2, border_radius=8)
-
             if free_day_active:
                 fd_label = "Free Day: ACTIVE"
             elif free_day_request_pending:
                 fd_label = "Free Day: PENDING"
             else:
                 fd_label = "Request Free Day"
-
             fd_text = font_mid.render(fd_label, True, BLACK)
             screen.blit(fd_text, fd_text.get_rect(center=(w // 2, 278)))
-
             pygame.draw.rect(screen, WHITE_DARK, (60, 320, w - 120, 55), border_radius=8)
             pygame.draw.rect(screen, ACCENT, (60, 320, w - 120, 55), 2, border_radius=8)
             q_text = font_mid.render(t("quests"), True, BLACK)
             screen.blit(q_text, q_text.get_rect(center=(w // 2, 348)))
-
             pygame.draw.rect(screen, WHITE_DARK, (60, 390, w - 120, 55), border_radius=8)
             pygame.draw.rect(screen, ACCENT, (60, 390, w - 120, 55), 2, border_radius=8)
             c_text = font_mid.render(t("codes"), True, BLACK)
             screen.blit(c_text, c_text.get_rect(center=(w // 2, 418)))
-
             pygame.draw.rect(screen, WHITE_DARK, (60, 460, w - 120, 55), border_radius=8)
             pygame.draw.rect(screen, ACCENT, (60, 460, w - 120, 55), 2, border_radius=8)
             a_text = font_mid.render("Achievements", True, BLACK)
@@ -1910,24 +2157,19 @@ while running:
         elif menu_state == "achievements":
             title = font_big.render("Achievements", True, BLACK)
             screen.blit(title, title.get_rect(center=(w // 2, 130)))
-
             total = len(ACHIEVEMENTS)
             got = len(unlocked_achievements)
             counter = font_small.render(f"{got} / {total}", True, GRAY_TEXT)
             screen.blit(counter, counter.get_rect(center=(w // 2, 165)))
-
             clip_rect = pygame.Rect(30, 190, w - 60, h - 320)
             clip_before = screen.get_clip()
             screen.set_clip(clip_rect)
-
             y = 200 - ach_scroll
             for ach in ACHIEVEMENTS:
                 ach_id, name, quote, desc, obtainable = ach
                 unlocked = ach_id in unlocked_achievements
-
                 row_h = 75
                 row_rect = pygame.Rect(50, y, w - 100, row_h)
-
                 if y + row_h > 190 and y < h - 130:
                     if unlocked:
                         bg = (230, 255, 230)
@@ -1938,17 +2180,13 @@ while running:
                     else:
                         bg = (245, 240, 245)
                         border = (200, 180, 200)
-
                     pygame.draw.rect(screen, bg, row_rect, border_radius=8)
                     pygame.draw.rect(screen, border, row_rect, 2, border_radius=8)
-
                     name_color = BLACK if (unlocked or obtainable) else GRAY_TEXT
                     name_t = font_small.render(name, True, name_color)
                     screen.blit(name_t, (65, y + 8))
-
                     quote_t = font_tiny.render(f'"{quote}"', True, GRAY_TEXT)
                     screen.blit(quote_t, (65, y + 32))
-
                     if unlocked:
                         stat = font_tiny.render("UNLOCKED", True, GREEN)
                     elif obtainable:
@@ -1956,48 +2194,38 @@ while running:
                     else:
                         stat = font_tiny.render("UNOBTAINABLE", True, (160, 100, 160))
                     screen.blit(stat, stat.get_rect(topright=(w - 65, y + 10)))
-
                 y += row_h + 8
-
             screen.set_clip(clip_before)
-
             hint = font_tiny.render("Scroll to see more", True, GRAY_TEXT)
             screen.blit(hint, hint.get_rect(center=(w // 2, h - 100)))
-
             back_btn = pygame.Rect(60, h - 80, w - 120, 45)
             pygame.draw.rect(screen, ACCENT, back_btn, border_radius=8)
             pygame.draw.rect(screen, BLACK, back_btn, 2, border_radius=8)
-            back_t = font_small.render("Back", True, WHITE)
+            back_t = font_small.render(t("back"), True, WHITE)
             screen.blit(back_t, back_t.get_rect(center=back_btn.center))
 
         elif menu_state == "codes":
             title = font_big.render(t("codes"), True, BLACK)
             screen.blit(title, title.get_rect(center=(w // 2, 130)))
-
             code_box = pygame.Rect(60, 180, w - 120, 55)
             pygame.draw.rect(screen, WHITE, code_box, border_radius=8)
             pygame.draw.rect(screen, ACCENT, code_box, 3, border_radius=8)
-
             code_txt = font_small.render(code_input, True, BLACK)
             screen.blit(code_txt, code_txt.get_rect(midleft=(code_box.x + 15, code_box.centery)))
-
             if (time.time() * 2) % 2 < 1:
                 cursor_x = code_box.x + 15 + code_txt.get_width() + 2
                 pygame.draw.line(screen, BLACK, (cursor_x, code_box.y + 12), (cursor_x, code_box.bottom - 12), 2)
-
             if code_message and time.time() < code_message_until:
                 msg_color = GREEN if code_message_ok else RED
                 msg = font_tiny.render(code_message, True, msg_color)
                 screen.blit(msg, msg.get_rect(center=(w // 2, 255)))
             else:
-                hint = font_tiny.render("Type code, press Enter", True, GRAY_TEXT)
+                hint = font_tiny.render(t("type_code"), True, GRAY_TEXT)
                 screen.blit(hint, hint.get_rect(center=(w // 2, 255)))
-
             list_title = font_small.render("Activated:", True, BLACK)
             screen.blit(list_title, (60, 290))
-
             if not ACTIVATED_CODES:
-                empty = font_tiny.render("No codes activated yet", True, GRAY_TEXT)
+                empty = font_tiny.render(t("no_codes"), True, GRAY_TEXT)
                 screen.blit(empty, (60, 320))
             else:
                 y = 320
@@ -2014,27 +2242,22 @@ while running:
         elif menu_state == "quests":
             title = font_big.render(t("quests"), True, BLACK)
             screen.blit(title, title.get_rect(center=(w // 2, 130)))
-
             date_str = time.strftime("%d.%m.%Y")
             date_text = font_tiny.render(date_str, True, GRAY_TEXT)
             screen.blit(date_text, date_text.get_rect(center=(w // 2, 165)))
-
             y = 210
             for q in daily_quests:
                 label, key, target = q
                 prog = quest_progress.get(key, 0)
                 done = prog >= target
-
                 q_rect = pygame.Rect(50, y, w - 100, 70)
                 pygame.draw.rect(screen, WHITE_DARK, q_rect, border_radius=10)
                 if done:
                     pygame.draw.rect(screen, GREEN, q_rect, 3, border_radius=10)
                 else:
                     pygame.draw.rect(screen, ACCENT, q_rect, 2, border_radius=10)
-
                 name_t = font_small.render(label, True, BLACK)
                 screen.blit(name_t, (65, y + 10))
-
                 prog_text = f"{prog} / {target}"
                 if done:
                     prog_text += "  done!"
@@ -2045,19 +2268,16 @@ while running:
         elif menu_state == "history":
             title = font_mid.render(t("history"), True, BLACK)
             screen.blit(title, title.get_rect(center=(w // 2, 120)))
-
             stats = get_history_stats()
             stats_rect = pygame.Rect(50, 155, w - 100, 95)
             pygame.draw.rect(screen, WHITE_DARK, stats_rect, border_radius=10)
             pygame.draw.rect(screen, ACCENT, stats_rect, 2, border_radius=10)
-
             s1 = font_tiny.render(f"Total: {stats['total']} timers", True, BLACK)
             s2 = font_tiny.render(f"Average: {stats['avg']}", True, BLACK)
             s3 = font_tiny.render(f"Most common: {stats['most_common']} ({stats['most_count']}x)", True, BLACK)
             screen.blit(s1, (65, 168))
             screen.blit(s2, (65, 192))
             screen.blit(s3, (65, 216))
-
             y = 265
             for entry in timer_history[-10:]:
                 line = f"{entry.get('duration', '?')}  -  {entry.get('time', '?')}"
@@ -2066,7 +2286,6 @@ while running:
                 y += 26
                 if y > h - 110:
                     break
-
             pygame.draw.rect(screen, ACCENT, (60, h - 80, w - 120, 45), border_radius=8)
             pygame.draw.rect(screen, BLACK, (60, h - 80, w - 120, 45), 2, border_radius=8)
             export_text = font_small.render("Export TXT", True, WHITE)
@@ -2075,10 +2294,8 @@ while running:
         elif menu_state == "sound":
             title = font_mid.render(t("sound"), True, BLACK)
             screen.blit(title, title.get_rect(center=(w // 2, 130)))
-
             lbl = font_small.render(t("volume"), True, BLACK)
             screen.blit(lbl, (60, 200))
-
             sx, sy, sw = 100, 240, 300
             pygame.draw.rect(screen, WHITE_DARK, (sx, sy - 5, sw, 10), border_radius=5)
             pygame.draw.rect(screen, ACCENT, (sx, sy - 5, int(sw * volume / 100), 10), border_radius=5)
@@ -2086,28 +2303,22 @@ while running:
             pygame.draw.circle(screen, BLACK, (sx + int(sw * volume / 100), sy), 12, 2)
             vt = font_tiny.render(f"{volume}", True, BLACK)
             screen.blit(vt, (sx + sw + 20, sy - 10))
-
             lbl2 = font_small.render("Sound Theme", True, BLACK)
             screen.blit(lbl2, (60, 290))
-
             list_rect = pygame.Rect(60, 320, w - 120, 200)
             pygame.draw.rect(screen, WHITE_DARK, list_rect, border_radius=8)
             pygame.draw.rect(screen, BLACK, list_rect, 2, border_radius=8)
-
             clip_before = screen.get_clip()
             screen.set_clip(list_rect)
-
             list_y = 325 - sound_scroll
             for name in SOUND_THEMES:
                 item_rect = pygame.Rect(65, list_y, w - 130, 40)
                 if name == current_sound_theme:
                     pygame.draw.rect(screen, ACCENT, item_rect, border_radius=6)
-                tn = font_small.render(name, True, BLACK)
+                tn = font_small.render(t_item(name), True, BLACK)
                 screen.blit(tn, (80, list_y + 8))
                 list_y += 45
-
             screen.set_clip(clip_before)
-
             hint = font_tiny.render("Scroll to see more", True, GRAY_TEXT)
             screen.blit(hint, hint.get_rect(center=(w // 2, h - 75)))
 
@@ -2116,30 +2327,36 @@ while running:
             screen.blit(title, title.get_rect(center=(w // 2, 150)))
             lbl = font_small.render(t("choose_theme"), True, BLACK)
             screen.blit(lbl, (60, 175))
-
-            ty = 200
+            clip_rect = pygame.Rect(40, 190, w - 80, h - 350)
+            clip_before = screen.get_clip()
+            screen.set_clip(clip_rect)
+            ty = 200 - theme_scroll
             for name, color in get_available_themes().items():
-                pygame.draw.rect(screen, WHITE_DARK, (100, ty, 300, 50), border_radius=8)
-                if name == current_theme:
-                    pygame.draw.rect(screen, ACCENT, (100, ty, 300, 50), 3, border_radius=8)
-                pygame.draw.rect(screen, color, (110, ty + 10, 30, 30), border_radius=4)
-                tn = font_small.render(name, True, BLACK)
-                screen.blit(tn, (160, ty + 12))
+                if 190 < ty < h - 160:
+                    pygame.draw.rect(screen, WHITE_DARK, (100, ty, 300, 50), border_radius=8)
+                    if name == current_theme:
+                        pygame.draw.rect(screen, ACCENT, (100, ty, 300, 50), 3, border_radius=8)
+                    pygame.draw.rect(screen, color, (110, ty + 10, 30, 30), border_radius=4)
+                    tn = font_small.render(t_item(name), True, BLACK)
+                    screen.blit(tn, (160, ty + 12))
                 ty += 65
+            screen.set_clip(clip_before)
+            if len(get_available_themes()) > 5:
+                hint = font_tiny.render("Scroll to see more", True, GRAY_TEXT)
+                screen.blit(hint, hint.get_rect(center=(w // 2, h - 140)))
 
         elif menu_state == "text":
             title = font_mid.render(t("text"), True, BLACK)
             screen.blit(title, title.get_rect(center=(w // 2, 150)))
             lbl = font_small.render(t("choose_text"), True, BLACK)
             screen.blit(lbl, (60, 175))
-
             ty = 200
             for name, color in TEXT_COLORS.items():
                 pygame.draw.rect(screen, WHITE_DARK, (100, ty, 300, 50), border_radius=8)
                 if name == current_text_color:
                     pygame.draw.rect(screen, ACCENT, (100, ty, 300, 50), 3, border_radius=8)
                 pygame.draw.rect(screen, color, (110, ty + 10, 30, 30), border_radius=4)
-                tn = font_small.render(name, True, BLACK)
+                tn = font_small.render(t_item(name), True, BLACK)
                 screen.blit(tn, (160, ty + 12))
                 ty += 65
 
@@ -2148,22 +2365,19 @@ while running:
             screen.blit(title, title.get_rect(center=(w // 2, 150)))
             lbl = font_small.render(t("choose_pattern"), True, BLACK)
             screen.blit(lbl, (60, 175))
-
             ty = 200
             for name in PATTERNS:
                 pygame.draw.rect(screen, WHITE_DARK, (100, ty, 300, 45), border_radius=8)
                 if name == current_pattern:
                     pygame.draw.rect(screen, ACCENT, (100, ty, 300, 45), 3, border_radius=8)
-                tn = font_small.render(name, True, BLACK)
+                tn = font_small.render(t_item(name), True, BLACK)
                 screen.blit(tn, (160, ty + 10))
                 ty += 55
-
             pygame.draw.rect(screen, WHITE_DARK, (100, ty + 10, 300, 45), border_radius=8)
             if invert_pattern:
                 pygame.draw.rect(screen, ACCENT, (100, ty + 10, 300, 45), 3, border_radius=8)
             it = font_small.render(t("inversion"), True, BLACK)
             screen.blit(it, (160, ty + 20))
-
             pygame.draw.rect(screen, WHITE_DARK, (100, ty + 70, 300, 45), border_radius=8)
             if animate_pattern:
                 pygame.draw.rect(screen, ACCENT, (100, ty + 70, 300, 45), 3, border_radius=8)
@@ -2175,7 +2389,6 @@ while running:
             screen.blit(title, title.get_rect(center=(w // 2, 150)))
             lbl = font_small.render(t("language"), True, BLACK)
             screen.blit(lbl, (60, 175))
-
             ty = 200
             for name in LANGUAGES:
                 pygame.draw.rect(screen, WHITE_DARK, (100, ty, 300, 45), border_radius=8)
@@ -2189,26 +2402,21 @@ while running:
         if state == "input":
             label = font_big.render(t("timer_label"), True, TEXT_COLOR)
             screen.blit(label, label.get_rect(center=(w // 2, h // 2 + 20)))
-
             bw, bh = 300, 60
             bx = (w - bw) // 2
             by = h // 2 + 80
             pygame.draw.rect(screen, ACCENT, (bx - 3, by - 3, bw + 6, bh + 6), border_radius=6)
             pygame.draw.rect(screen, WHITE, (bx, by, bw, bh), border_radius=6)
-
             txt = font_mid.render(timer_input, True, TEXT_COLOR)
             screen.blit(txt, txt.get_rect(midleft=(bx + 15, by + bh // 2)))
-
             if (time.time() * 2) % 2 < 1:
                 cursor_x = bx + 15 + txt.get_width() + 2
                 pygame.draw.line(screen, TEXT_COLOR, (cursor_x, by + 10), (cursor_x, by + bh - 10), 2)
-
             if time.time() < error_until:
                 e1 = font_small.render(t("too_much"), True, RED)
                 e2 = font_small.render(t("max_2h"), True, RED)
                 screen.blit(e1, e1.get_rect(center=(w // 2, h // 2 + 180)))
                 screen.blit(e2, e2.get_rect(center=(w // 2, h // 2 + 210)))
-
             if not note_used:
                 panel_rect = pygame.Rect(
                     w - note_panel_w - 30,
@@ -2218,13 +2426,11 @@ while running:
                 )
                 pygame.draw.rect(screen, WHITE, panel_rect, border_radius=8)
                 pygame.draw.rect(screen, YELLOW, panel_rect, 3, border_radius=8)
-
                 if note_panel_w > 100:
                     preview = note_text if note_active and note_text else (current_note if current_note else "Note...")
                     pcol = BLACK if (note_active and note_text) or current_note else GRAY_TEXT
                     ptext = font_tiny.render(preview, True, pcol)
                     screen.blit(ptext, ptext.get_rect(midleft=(panel_rect.x + 15, panel_rect.centery)))
-
                 arrow_pts = [
                     (w - 6, note_btn_y - 12),
                     (w - 6, note_btn_y + 12),
@@ -2236,12 +2442,10 @@ while running:
         elif state == "timer":
             elapsed = (time.time() - timer_start) * timer_speed_mult
             remaining = max(0, int(timer_seconds - elapsed))
-
             hh = remaining // 3600
             mm = (remaining % 3600) // 60
             ss = remaining % 60
             time_str = f"{hh:02d}:{mm:02d}:{ss:02d}"
-
             if remaining > 60:
                 timer_color = TEXT_COLOR
                 shake = 0
@@ -2254,33 +2458,26 @@ while running:
             else:
                 timer_color = RED
                 shake = random.randint(-2, 2)
-
             txt = font_big.render(time_str, True, timer_color)
             screen.blit(txt, txt.get_rect(center=(w // 2 + shake, h // 2 - 20 + shake)))
-
             draw_fact(screen, w, h, current_fact)
             draw_note(screen, w, h, current_note)
 
         elif state == "cooldown":
             cooldown_active = True
             remaining = max(0, int(cooldown_end - time.time()))
-
             if cooldown_start_time == 0:
                 cooldown_start_time = time.time()
-
             now = time.time()
-
             if request_phase == "idle" and not request_used and now - cooldown_start_time >= 5:
                 request_phase = "button"
                 request_phase_time = now
                 request_btn_visible = True
                 request_used = True
-
             if request_btn_visible and request_btn_slide < 1.0:
                 request_btn_slide = min(1.0, request_btn_slide + 0.03)
             elif not request_btn_visible and request_btn_slide > 0.0:
                 request_btn_slide = max(0.0, request_btn_slide - 0.03)
-
             if request_phase == "retreating" and request_btn_slide <= 0.0:
                 request_phase = "waiting"
                 request_phase_time = now
@@ -2311,25 +2508,19 @@ while running:
                 hh = remaining // 3600
                 mm = (remaining % 3600) // 60
                 ss = remaining % 60
-
-                label = font_big.render(t("cooldown"), True, RED)
+                label = font_big.render(t("timer_label"), True, TEXT_COLOR)
                 screen.blit(label, label.get_rect(center=(w // 2, h // 2 - 60)))
-
                 txt = font_big.render(f"{hh:02d}:{mm:02d}:{ss:02d}", True, TEXT_COLOR)
                 screen.blit(txt, txt.get_rect(center=(w // 2, h // 2 + 10)))
-
                 hint = font_small.render(t("no_play"), True, RED)
                 screen.blit(hint, hint.get_rect(center=(w // 2, h // 2 + 70)))
-
                 draw_fact(screen, w, h, current_fact)
                 draw_note(screen, w, h, current_note)
-
                 if request_btn_slide > 0.0 and request_phase in ("button", "retreating", "msg", "msg_retreating"):
                     btn_w, btn_h = 260, 50
                     target_x = 20
                     btn_x = target_x - int((1.0 - request_btn_slide) * (btn_w + 40))
                     btn_y = h - 100
-
                     if request_phase in ("button", "retreating"):
                         pygame.draw.rect(screen, ACCENT, (btn_x, btn_y, btn_w, btn_h), border_radius=8)
                         pygame.draw.rect(screen, BLACK, (btn_x, btn_y, btn_w, btn_h), 2, border_radius=8)
@@ -2338,7 +2529,6 @@ while running:
                             (btn_x + btn_w // 2, btn_y + btn_h // 2), WHITE, BLACK,
                         )
                         request_btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
-
                     elif request_phase in ("msg", "msg_retreating"):
                         pygame.draw.rect(screen, ACCENT, (btn_x, btn_y, btn_w, btn_h), border_radius=8)
                         draw_text_with_outline(
@@ -2352,29 +2542,23 @@ while running:
         elif state == "closing":
             label = font_big.render(t("closing1"), True, TEXT_COLOR)
             screen.blit(label, label.get_rect(center=(w // 2, h // 2 - 80)))
-
             label2a = font_mid.render(t("closing2a"), True, TEXT_COLOR)
             screen.blit(label2a, label2a.get_rect(center=(w // 2, h // 2 - 20)))
-
             label2b = font_mid.render(t("closing2b"), True, TEXT_COLOR)
             screen.blit(label2b, label2b.get_rect(center=(w // 2, h // 2 + 20)))
-
             label3 = font_mid.render(t("closing3"), True, TEXT_COLOR)
             screen.blit(label3, label3.get_rect(center=(w // 2, h // 2 + 80)))
-
             if time.time() - close_start >= 6:
                 running = False
 
         if state == "input":
             mouse_pos = pygame.mouse.get_pos()
             dist = (mouse_pos[0] - button_center[0]) ** 2 + (mouse_pos[1] - button_center[1]) ** 2
-
             btn_pressed = False
             if event.type == pygame.MOUSEBUTTONDOWN and dist <= 80 ** 2:
                 btn_pressed = True
             if event.type == pygame.MOUSEBUTTONUP:
                 btn_pressed = False
-
             if btn_pressed:
                 current_radius = 75
                 inner_color = WHITE_DARK
@@ -2384,12 +2568,35 @@ while running:
             else:
                 current_radius = 80
                 inner_color = WHITE
-
             pygame.draw.circle(screen, ACCENT, button_center, current_radius)
             pygame.draw.circle(screen, inner_color, button_center, current_radius - 5)
-
             btn_text = font_big.render(t("start"), True, TEXT_COLOR)
             screen.blit(btn_text, btn_text.get_rect(center=button_center))
+
+    if halloween_event_active:
+        remaining_event = int(halloween_event_timer - time.time())
+        if remaining_event > 0:
+            dark_surf = pygame.Surface((w, h), pygame.SRCALPHA)
+            dark_surf.fill((0, 0, 0, 80))
+            screen.blit(dark_surf, (0, 0))
+            title = font_mid.render("HALLOWEEN EVENT", True, (255, 140, 0))
+            screen.blit(title, title.get_rect(center=(w // 2, h // 2 - 80)))
+            time_text = font_big.render(f"{remaining_event}", True, (255, 60, 60))
+            screen.blit(time_text, time_text.get_rect(center=(w // 2, h // 2 - 10)))
+            files_left = count_halloween_files()
+            files_found = max(0, 6 - files_left)
+            progress = font_small.render(f"{files_found} / 6", True, (255, 140, 0))
+            screen.blit(progress, progress.get_rect(center=(w // 2, h // 2 + 50)))
+        if remaining_event <= 15:
+            shake_x = random.randint(-3, 3)
+            shake_y = random.randint(-3, 3)
+            if hint_folder_name and hint_folder_base:
+                hint_str = f"CHECK {hint_folder_name} IN {hint_folder_base.upper()} !!1!1!!111!1"
+            else:
+                hint_str = "CHECK YOUR FOLDERS !!1!1!!111!1"
+            hint_surface = font_small.render(hint_str, True, (255, 60, 60))
+            hint_rect = hint_surface.get_rect(center=(w // 2 + shake_x, h // 2 + 110 + shake_y))
+            screen.blit(hint_surface, hint_rect)
 
     pygame.display.flip()
 
