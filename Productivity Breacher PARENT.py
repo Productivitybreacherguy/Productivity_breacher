@@ -6,7 +6,8 @@ import math
 import numpy as np
 import json
 import os
-
+import subprocess
+import threading
 
 pygame.init()
 pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
@@ -15,33 +16,33 @@ W, H = 500, 700
 screen = pygame.display.set_mode((W, H), pygame.SCALED | pygame.RESIZABLE)
 pygame.display.set_caption("PBcontrol")
 
-WHITE = (255, 255, 255)
+WHITE      = (255, 255, 255)
 WHITE_DARK = (230, 230, 230)
-GRAY_SOFT = (240, 240, 240)
-GRAY_TEXT = (100, 100, 100)
-BLACK = (0, 0, 0)
-RED = (220, 50, 50)
-GREEN = (100, 220, 100)
-BORDER = 10
+GRAY_SOFT  = (240, 240, 240)
+GRAY_TEXT  = (100, 100, 100)
+BLACK      = (0, 0, 0)
+RED        = (220, 50, 50)
+GREEN      = (100, 220, 100)
+BORDER     = 10
 
-font_big = pygame.font.Font(None, 48)
-font_mid = pygame.font.Font(None, 36)
+font_big   = pygame.font.Font(None, 48)
+font_mid   = pygame.font.Font(None, 36)
 font_small = pygame.font.Font(None, 30)
-font_tiny = pygame.font.Font(None, 24)
+font_tiny  = pygame.font.Font(None, 24)
 
 THEMES = {
-    "Классика": (255, 215, 0),
+    "Классика":   (255, 215, 0),
     "Фиолетовая": (180, 100, 255),
-    "Зелёная": (100, 220, 120),
-    "Синяя": (100, 160, 255),
+    "Зелёная":    (100, 220, 120),
+    "Синяя":      (100, 160, 255),
 }
 current_theme = "Классика"
 ACCENT = THEMES[current_theme]
 
 TEXT_COLORS = {
-    "Чёрный": (0, 0, 0),
-    "Серый": (100, 100, 100),
-    "Тёмно-синий": (20, 40, 90),
+    "Чёрный":           (0, 0, 0),
+    "Серый":            (100, 100, 100),
+    "Тёмно-синий":      (20, 40, 90),
     "Тёмно-фиолетовый": (70, 30, 110),
 }
 current_text_color = "Чёрный"
@@ -52,7 +53,7 @@ current_pattern = "Шахматка"
 invert_pattern = False
 
 LANGUAGES = ["Русский", "English", "Deutsch", "Français", "Español"]
-current_language = "Русский"
+current_language = "English"
 
 TRANSLATIONS = {
     "Русский": {"settings": "Настройки", "sound": "Звук", "themes": "Темы", "text": "Текст",
@@ -112,16 +113,18 @@ input_error_until = 0
 status_message = ""
 status_message_until = 0
 
-HOST = "127.0.0.1"
-PORT = 9900  # заглушка, реальный порт читается из pb_session.json
-SESSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pb_session.json")
+APP_SUPPORT_DIR = os.path.expanduser("~/Library/Application Support/ProductivityBreacher")
+SESSION_FILE = os.path.join(APP_SUPPORT_DIR, "pb_session.json")
 
+# ============================================================
+# SESSION / SOCKET HELPERS  (127.0.0.1 only — no Tailscale)
+# ============================================================
 def load_session():
-    """Читает порт и токен из pb_session.json."""
     try:
         with open(SESSION_FILE, "r") as f:
             return json.load(f)
-    except Exception:
+    except Exception as e:
+        print(f"[PARENT ERROR] Не удалось прочитать сессию: {e}")
         return None
 
 
@@ -138,101 +141,97 @@ def play_key_sound():
 
 
 def send_command(command):
+    """Open a socket, auth, send one command, close. Localhost only."""
     session = load_session()
     if not session:
-        print("[CONTROL] Main not running (no session file)")
         return False
     try:
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.settimeout(1.0)
-        client.connect((HOST, session["port"]))
-        client.sendall(f"AUTH:{session['token']}\n".encode())
-        client.sendall(command.encode())
+        client.settimeout(2.0)
+        client.connect(("127.0.0.1", int(session["port"])))
+        client.sendall(f"AUTH:{session['token']}\n{command}\n".encode())
         client.close()
         return True
     except Exception as e:
-        print(f"[CONTROL] Send failed: {e}")
+        print(f"[CONTROL] Send failed: {type(e).__name__}: {e}")
         return False
 
 
 def ping_child():
     session = load_session()
-    print(f"[PING] session={session}")
     if not session:
         return False
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(0.15)
-        s.connect((HOST, session["port"]))
+        s.settimeout(0.5)
+        s.connect(("127.0.0.1", int(session["port"])))
         s.close()
-        print(f"[PING] OK, port={session['port']}")
         return True
     except Exception as e:
-        print(f"[PING] FAIL: {e}")
+        print(f"[PING] FAIL: {type(e).__name__}: {e}")
         return False
 
 
 def check_pending_request():
-    """Опрашивает main на предмет запросов от ребёнка."""
     global pending_request
-    
     session = load_session()
     if not session:
         pending_request = None
         return
     try:
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.sendall(f"AUTH:{session['token']}\n".encode())
-        client.settimeout(1.0)
-        client.connect((HOST, session["port"]))
-        client.sendall(f"AUTH:{session['token']}".encode())
-        client.sendall(b"GET_PENDING")
-        response = client.recv(1024).decode().strip()
+        client.settimeout(2.0)
+        client.connect(("127.0.0.1", int(session["port"])))
+        client.sendall(f"AUTH:{session['token']}\nGET_PENDING\n".encode())
+        response = b""
+        deadline = time.time() + 2.0
+        while b"PENDING:" not in response and time.time() < deadline:
+            try:
+                chunk = client.recv(1024)
+            except socket.timeout:
+                break
+            if not chunk:
+                break
+            response += chunk
         client.close()
-        print(f"[PARENT] GET_PENDING → {response}")
-        if response.startswith("PENDING:"):
-            req = response.split(":", 1)[1]
-            if req == "NONE":
-                pending_request = None
-            else:
-                pending_request = req
+        text = response.decode().strip()
+        if text.startswith("PENDING:"):
+            req = text.split(":", 1)[1]
+            pending_request = None if req == "NONE" else req
+        else:
+            pending_request = None
     except Exception as e:
-        print(f"[PARENT] check_pending error: {e}")
+        print(f"[PARENT] check_pending error: {type(e).__name__}: {e}")
         pending_request = None
 
 
 def get_history():
     session = load_session()
     if not session:
-        print("[PARENT] Main not running (no session file)")
         return None
     try:
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client.settimeout(3.0)
-        client.connect((HOST, session["port"]))
-        client.sendall(f"AUTH:{session['token']}".encode())
-        client.sendall(b"GET_HISTORY\n")
-        client.sendall(f"AUTH:{session['token']}\n".encode())
-
+        client.connect(("127.0.0.1", int(session["port"])))
+        client.sendall(f"AUTH:{session['token']}\nGET_HISTORY\n".encode())
         buffer = b""
-        while b"HISTORY_END" not in buffer:
-            chunk = client.recv(1024)
+        deadline = time.time() + 3.0
+        while b"HISTORY_END" not in buffer and time.time() < deadline:
+            try:
+                chunk = client.recv(1024)
+            except socket.timeout:
+                break
             if not chunk:
                 break
             buffer += chunk
-
         client.close()
-
         text = buffer.decode()
         lines = text.split("\n")
-
         try:
             start = lines.index("HISTORY_START")
             end = lines.index("HISTORY_END")
         except ValueError:
-            print("[PARENT] Некорректный ответ от основы")
             return None
-
         history = []
         for line in lines[start + 1:end]:
             line = line.strip()
@@ -242,9 +241,8 @@ def get_history():
             if len(parts) == 2:
                 history.append({"duration": parts[0], "time": parts[1]})
         return history
-
     except Exception as e:
-        print(f"[PARENT] Ошибка получения истории: {e}")
+        print(f"[PARENT] get_history error: {type(e).__name__}: {e}")
         return None
 
 
@@ -266,6 +264,9 @@ def validate_lock(value):
     return True, ""
 
 
+# ============================================================
+# DRAWING HELPERS
+# ============================================================
 def draw_pattern(surface, w, h):
     if current_pattern == "Пусто":
         return
@@ -365,6 +366,9 @@ def draw_folder_icon(surface, x, y, key):
         pygame.draw.line(surface, color, (x, y), (x + 4, y + 2), 2)
 
 
+# ============================================================
+# MAIN LOOP
+# ============================================================
 running = True
 while running:
     now = time.time()
@@ -381,7 +385,7 @@ while running:
     button_center = (w // 2, h // 2 - 100)
     button_radius = 80
     text_y = h // 2 + 80
-    left_arrow_rect = pygame.Rect(w // 2 - 180, text_y - 25, 50, 50)
+    left_arrow_rect  = pygame.Rect(w // 2 - 180, text_y - 25, 50, 50)
     right_arrow_rect = pygame.Rect(w // 2 + 130, text_y - 25, 50, 50)
     gear_pos = (w - 35, 35)
     gear_radius = 20
@@ -474,6 +478,13 @@ while running:
                 input_mode = False
                 input_text = ""
                 input_error = ""
+            elif event.key == pygame.K_v and (pygame.key.get_mods() & pygame.KMOD_META):
+                try:
+                    pasted = subprocess.check_output(["pbpaste"]).decode("utf-8", errors="ignore").strip()
+                    if pasted:
+                        input_text = (input_text + pasted)[:20]
+                except Exception as e:
+                    print(f"[PASTE] Ошибка: {e}")
             else:
                 if event.unicode and event.unicode.isprintable() and len(input_text) < 20:
                     input_text += event.unicode
@@ -481,17 +492,11 @@ while running:
         if event.type == pygame.MOUSEBUTTONDOWN:
             if pending_request and accept_button_rect and deny_button_rect:
                 if accept_button_rect.collidepoint(event.pos):
-                    if pending_request == "discard":
-                        send_command("DISCARD_ACCEPT")
-                    else:
-                        send_command("FREE_DAY_ACCEPT")
+                    send_command("DISCARD_ACCEPT" if pending_request == "discard" else "FREE_DAY_ACCEPT")
                     pending_request = None
                     continue
                 elif deny_button_rect.collidepoint(event.pos):
-                    if pending_request == "discard":
-                        send_command("DISCARD_DENY")
-                    else:
-                        send_command("FREE_DAY_DENY")
+                    send_command("DISCARD_DENY" if pending_request == "discard" else "FREE_DAY_DENY")
                     pending_request = None
                     continue
 
@@ -513,7 +518,8 @@ while running:
                     history_cache = None
 
                 elif menu_state == "list":
-                    folders = [("sound", 200), ("themes", 270), ("text", 340), ("patterns", 410), ("langs", 480), ("history", 550)]
+                    folders = [("sound", 200), ("themes", 270), ("text", 340),
+                               ("patterns", 410), ("langs", 480), ("history", 550)]
                     for key, y_pos in folders:
                         if 60 < event.pos[0] < w - 60 and y_pos < event.pos[1] < y_pos + 55:
                             menu_state = key
@@ -581,20 +587,12 @@ while running:
                         input_error = ""
                     elif cmd == "Discard":
                         ok = send_command("DISCARD")
-                        if ok:
-                            status_message = "Cooldown discarded."
-                            status_message_until = time.time() + 3
-                        else:
-                            status_message = "Base not running!"
-                            status_message_until = time.time() + 3
+                        status_message = "Cooldown discarded." if ok else "Base not running!"
+                        status_message_until = time.time() + 3
                     elif cmd == "Free Day":
                         ok = send_command("FREE_DAY")
-                        if ok:
-                            status_message = "Free Day granted."
-                            status_message_until = time.time() + 3
-                        else:
-                            status_message = "Base not running!"
-                            status_message_until = time.time() + 3
+                        status_message = "Free Day granted." if ok else "Base not running!"
+                        status_message_until = time.time() + 3
 
         if event.type == pygame.MOUSEBUTTONUP:
             slider_drag = False
@@ -641,22 +639,19 @@ while running:
     if menu_fade > 0.0:
         menu_alpha = int(255 * menu_fade)
         menu_surf = pygame.Surface((w, h), pygame.SRCALPHA)
-        menu_surf.fill((0, 0, 0, 0))
-
         panel_rect = pygame.Rect(30, 80, w - 60, h - 160)
         pygame.draw.rect(menu_surf, (*WHITE, menu_alpha), panel_rect, border_radius=12)
         pygame.draw.rect(menu_surf, (*ACCENT, menu_alpha), panel_rect, 3, border_radius=12)
-
         cx, cy = w - 55, 105
         pygame.draw.line(menu_surf, (*BLACK, menu_alpha), (cx - 12, cy - 12), (cx + 12, cy + 12), 3)
         pygame.draw.line(menu_surf, (*BLACK, menu_alpha), (cx + 12, cy - 12), (cx - 12, cy + 12), 3)
-
         screen.blit(menu_surf, (0, 0))
 
         if menu_state == "list":
             title = font_big.render(t("settings"), True, BLACK)
             screen.blit(title, title.get_rect(center=(w // 2, 140)))
-            folders = [("sound", 200), ("themes", 270), ("text", 340), ("patterns", 410), ("langs", 480), ("history", 550)]
+            folders = [("sound", 200), ("themes", 270), ("text", 340),
+                       ("patterns", 410), ("langs", 480), ("history", 550)]
             for key, y_pos in folders:
                 rect = pygame.Rect(60, y_pos, w - 120, 55)
                 pygame.draw.rect(screen, WHITE_DARK, rect, border_radius=8)
@@ -763,19 +758,15 @@ while running:
                 list_rect = pygame.Rect(50, 185, w - 100, h - 290)
                 pygame.draw.rect(screen, WHITE_DARK, list_rect, border_radius=10)
                 pygame.draw.rect(screen, ACCENT, list_rect, 2, border_radius=10)
-
                 clip_before = screen.get_clip()
                 screen.set_clip(list_rect)
-
                 y = list_rect.y + 10 - history_scroll
                 for entry in reversed(history_cache):
                     line = f"{entry.get('duration', '?')}  —  {entry.get('time', '?')}"
                     text = font_tiny.render(line, True, TEXT_COLOR)
                     screen.blit(text, (list_rect.x + 15, y))
                     y += 30
-
                 screen.set_clip(clip_before)
-
                 total_h = len(history_cache) * 30
                 visible_h = list_rect.h
                 if total_h > visible_h:
@@ -783,7 +774,6 @@ while running:
                     scroll_ratio = history_scroll / max(1, (total_h - visible_h))
                     bar_y = list_rect.y + int((visible_h - bar_h) * scroll_ratio)
                     pygame.draw.rect(screen, ACCENT, (list_rect.right - 8, bar_y, 4, bar_h), border_radius=2)
-
                 hint = font_tiny.render("Scroll with mouse wheel", True, GRAY_TEXT)
                 screen.blit(hint, hint.get_rect(center=(w // 2, h - 110)))
 
@@ -828,16 +818,10 @@ while running:
     else:
         mouse_pos = pygame.mouse.get_pos()
         dist = (mouse_pos[0] - button_center[0]) ** 2 + (mouse_pos[1] - button_center[1]) ** 2
-
-        if dist <= button_radius ** 2:
-            inner_color = WHITE_DARK
-        else:
-            inner_color = WHITE
-
+        inner_color = WHITE_DARK if dist <= button_radius ** 2 else WHITE
         current_radius = button_radius - 5 if button_pressed else button_radius
         pygame.draw.circle(screen, ACCENT, button_center, current_radius)
         pygame.draw.circle(screen, inner_color, button_center, current_radius - 5)
-
         btn_text = font_big.render("GO", True, TEXT_COLOR)
         screen.blit(btn_text, btn_text.get_rect(center=button_center))
 
@@ -869,7 +853,6 @@ while running:
             (right_arrow_rect.right, right_arrow_rect.centery)
         ], 3)
 
-    # --- Попап запроса от ребёнка ---
     if request_popup_slide > 0.0 and pending_request:
         popup_w = w - 60
         popup_h = 130
@@ -881,32 +864,25 @@ while running:
         pygame.draw.rect(screen, WHITE, popup_rect, border_radius=14)
         pygame.draw.rect(screen, ACCENT, popup_rect, 3, border_radius=14)
 
-        if pending_request == "discard":
-            text = "Your child wants to discard cooldown."
-        else:
-            text = "Your child wants a Free Day."
-
+        text = "Your child wants to discard cooldown." if pending_request == "discard" else "Your child wants a Free Day."
         msg = font_small.render(text, True, BLACK)
         screen.blit(msg, msg.get_rect(center=(w // 2, popup_y + 35)))
 
-        btn_w = 100
-        btn_h = 40
+        btn_w, btn_h = 100, 40
         btn_y = popup_y + 75
         accept_rect = pygame.Rect(w // 2 - btn_w - 10, btn_y, btn_w, btn_h)
-        deny_rect = pygame.Rect(w // 2 + 10, btn_y, btn_w, btn_h)
+        deny_rect   = pygame.Rect(w // 2 + 10,        btn_y, btn_w, btn_h)
 
         pygame.draw.rect(screen, GREEN, accept_rect, border_radius=8)
         pygame.draw.rect(screen, BLACK, accept_rect, 2, border_radius=8)
-        acc_text = font_small.render("Accept", True, BLACK)
-        screen.blit(acc_text, acc_text.get_rect(center=accept_rect.center))
+        screen.blit(font_small.render("Accept", True, BLACK), font_small.render("Accept", True, BLACK).get_rect(center=accept_rect.center))
 
         pygame.draw.rect(screen, RED, deny_rect, border_radius=8)
         pygame.draw.rect(screen, BLACK, deny_rect, 2, border_radius=8)
-        den_text = font_small.render("Deny", True, WHITE)
-        screen.blit(den_text, den_text.get_rect(center=deny_rect.center))
-
+        screen.blit(font_small.render("Deny", True, WHITE), font_small.render("Deny", True, WHITE).get_rect(center=deny_rect.center))
+    
         accept_button_rect = accept_rect
-        deny_button_rect = deny_rect
+        deny_button_rect   = deny_rect
 
     pygame.display.flip()
 
