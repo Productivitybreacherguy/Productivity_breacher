@@ -7,15 +7,18 @@ import numpy as np
 import json
 import os
 import subprocess
-import threading
+import platform
+IS_WINDOWS = platform.system() == "Windows"
 
+
+# --- INIT ---
 pygame.init()
 pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
-
 W, H = 500, 700
 screen = pygame.display.set_mode((W, H), pygame.SCALED | pygame.RESIZABLE)
 pygame.display.set_caption("PBcontrol")
 
+# --- COLORS ---
 WHITE      = (255, 255, 255)
 WHITE_DARK = (230, 230, 230)
 GRAY_SOFT  = (240, 240, 240)
@@ -25,11 +28,13 @@ RED        = (220, 50, 50)
 GREEN      = (100, 220, 100)
 BORDER     = 10
 
+# --- FONTS ---
 font_big   = pygame.font.Font(None, 48)
 font_mid   = pygame.font.Font(None, 36)
 font_small = pygame.font.Font(None, 30)
 font_tiny  = pygame.font.Font(None, 24)
 
+# --- THEMES & STYLING ---
 THEMES = {
     "Классика":   (255, 215, 0),
     "Фиолетовая": (180, 100, 255),
@@ -55,6 +60,7 @@ invert_pattern = False
 LANGUAGES = ["Русский", "English", "Deutsch", "Français", "Español"]
 current_language = "English"
 
+# --- TRANSLATIONS ---
 TRANSLATIONS = {
     "Русский": {"settings": "Настройки", "sound": "Звук", "themes": "Темы", "text": "Текст",
                 "patterns": "Узоры", "langs": "Языки", "volume": "Громкость", "history": "История",
@@ -81,6 +87,7 @@ TRANSLATIONS = {
 def t(key):
     return TRANSLATIONS[current_language].get(key, key)
 
+# --- STATE VARIABLES ---
 volume = 75
 slider_drag = False
 menu_state = "closed"
@@ -113,12 +120,13 @@ input_error_until = 0
 status_message = ""
 status_message_until = 0
 
-APP_SUPPORT_DIR = os.path.expanduser("~/Library/Application Support/ProductivityBreacher")
+if IS_WINDOWS:
+    APP_SUPPORT_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "ProductivityBreacher")
+else:
+    APP_SUPPORT_DIR = os.path.expanduser("~/Library/Application Support/ProductivityBreacher")
 SESSION_FILE = os.path.join(APP_SUPPORT_DIR, "pb_session.json")
 
-# ============================================================
-# SESSION / SOCKET HELPERS  (127.0.0.1 only — no Tailscale)
-# ============================================================
+# --- SESSION & SOCKET HELPERS ---
 def load_session():
     try:
         with open(SESSION_FILE, "r") as f:
@@ -126,7 +134,6 @@ def load_session():
     except Exception as e:
         print(f"[PARENT ERROR] Не удалось прочитать сессию: {e}")
         return None
-
 
 def play_key_sound():
     sr = 44100
@@ -136,26 +143,44 @@ def play_key_sound():
     wave = np.sin(2 * np.pi * 800 * t_arr) * np.exp(-t_arr * 60)
     buf = (wave * 0.2 * (volume / 100) * 32767).astype(np.int16)
     stereo = np.column_stack((buf, buf))
-    sound = pygame.sndarray.make_sound(stereo)
-    sound.play()
+    pygame.sndarray.make_sound(stereo).play()
 
-
-def send_command(command):
-    """Open a socket, auth, send one command, close. Localhost only."""
+def send_and_receive(command, wait_for_reply=False, timeout=2.0):
+    """Unified socket connection to the child process."""
     session = load_session()
     if not session:
-        return False
+        return None if wait_for_reply else False
+    
     try:
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.settimeout(2.0)
+        client.settimeout(timeout)
         client.connect(("127.0.0.1", int(session["port"])))
         client.sendall(f"AUTH:{session['token']}\n{command}\n".encode())
+        
+        if not wait_for_reply:
+            client.close()
+            return True
+            
+        response = b""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                chunk = client.recv(1024)
+                if not chunk:
+                    break
+                response += chunk
+                if b"PENDING:" in response or b"HISTORY_END" in response:
+                    break
+            except socket.timeout:
+                break
         client.close()
-        return True
+        return response.decode().strip()
     except Exception as e:
-        print(f"[CONTROL] Send failed: {type(e).__name__}: {e}")
-        return False
+        print(f"[CONTROL] Socket error: {type(e).__name__}: {e}")
+        return None if wait_for_reply else False
 
+def send_command(command):
+    return send_and_receive(command, wait_for_reply=False)
 
 def ping_child():
     session = load_session()
@@ -167,84 +192,37 @@ def ping_child():
         s.connect(("127.0.0.1", int(session["port"])))
         s.close()
         return True
-    except Exception as e:
-        print(f"[PING] FAIL: {type(e).__name__}: {e}")
+    except Exception:
         return False
-
 
 def check_pending_request():
     global pending_request
-    session = load_session()
-    if not session:
+    text = send_and_receive("GET_PENDING", wait_for_reply=True)
+    if text and text.startswith("PENDING:"):
+        req = text.split(":", 1)[1]
+        pending_request = None if req == "NONE" else req
+    else:
         pending_request = None
-        return
-    try:
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.settimeout(2.0)
-        client.connect(("127.0.0.1", int(session["port"])))
-        client.sendall(f"AUTH:{session['token']}\nGET_PENDING\n".encode())
-        response = b""
-        deadline = time.time() + 2.0
-        while b"PENDING:" not in response and time.time() < deadline:
-            try:
-                chunk = client.recv(1024)
-            except socket.timeout:
-                break
-            if not chunk:
-                break
-            response += chunk
-        client.close()
-        text = response.decode().strip()
-        if text.startswith("PENDING:"):
-            req = text.split(":", 1)[1]
-            pending_request = None if req == "NONE" else req
-        else:
-            pending_request = None
-    except Exception as e:
-        print(f"[PARENT] check_pending error: {type(e).__name__}: {e}")
-        pending_request = None
-
 
 def get_history():
-    session = load_session()
-    if not session:
+    text = send_and_receive("GET_HISTORY", wait_for_reply=True, timeout=3.0)
+    if not text:
         return None
+    lines = text.split("\n")
     try:
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.settimeout(3.0)
-        client.connect(("127.0.0.1", int(session["port"])))
-        client.sendall(f"AUTH:{session['token']}\nGET_HISTORY\n".encode())
-        buffer = b""
-        deadline = time.time() + 3.0
-        while b"HISTORY_END" not in buffer and time.time() < deadline:
-            try:
-                chunk = client.recv(1024)
-            except socket.timeout:
-                break
-            if not chunk:
-                break
-            buffer += chunk
-        client.close()
-        text = buffer.decode()
-        lines = text.split("\n")
-        try:
-            start = lines.index("HISTORY_START")
-            end = lines.index("HISTORY_END")
-        except ValueError:
-            return None
-        history = []
-        for line in lines[start + 1:end]:
-            line = line.strip()
-            if not line:
-                continue
+        start = lines.index("HISTORY_START")
+        end = lines.index("HISTORY_END")
+    except ValueError:
+        return None
+    
+    history = []
+    for line in lines[start + 1:end]:
+        line = line.strip()
+        if line:
             parts = line.split("|")
             if len(parts) == 2:
                 history.append({"duration": parts[0], "time": parts[1]})
-        return history
-    except Exception as e:
-        print(f"[PARENT] get_history error: {type(e).__name__}: {e}")
-        return None
-
+    return history
 
 def validate_lock(value):
     if len(value) < 2:
@@ -263,10 +241,7 @@ def validate_lock(value):
         return False, "Max 2 hours!"
     return True, ""
 
-
-# ============================================================
-# DRAWING HELPERS
-# ============================================================
+# --- DRAWING HELPERS ---
 def draw_pattern(surface, w, h):
     if current_pattern == "Пусто":
         return
@@ -286,24 +261,19 @@ def draw_pattern(surface, w, h):
                     (x + size // 2, y + size), (x, y + size // 2)
                 ])
 
-
 def draw_gear(surface, x, y, r, color):
     pygame.draw.circle(surface, color, (x, y), r)
     pygame.draw.circle(surface, WHITE, (x, y), r - 5)
     pygame.draw.circle(surface, color, (x, y), r - 10)
     for i in range(8):
         angle = i * math.pi / 4
-        gx = x + int(math.cos(angle) * r)
-        gy = y + int(math.sin(angle) * r)
-        pygame.draw.circle(surface, color, (gx, gy), 4)
-
+        pygame.draw.circle(surface, color, (x + int(math.cos(angle) * r), y + int(math.sin(angle) * r)), 4)
 
 def draw_close_button(surface, w):
     cx, cy = w - 55, 105
     pygame.draw.line(surface, BLACK, (cx - 12, cy - 12), (cx + 12, cy + 12), 3)
     pygame.draw.line(surface, BLACK, (cx + 12, cy - 12), (cx - 12, cy + 12), 3)
     return (cx, cy, 20)
-
 
 def draw_icon(surface, x, y, option):
     color = ACCENT
@@ -331,12 +301,9 @@ def draw_icon(surface, x, y, option):
         pygame.draw.circle(surface, color, (x, y), 7, 2)
         for i in range(8):
             angle = i * math.pi / 4
-            sx = x + int(math.cos(angle) * 11)
-            sy = y + int(math.sin(angle) * 11)
-            ex = x + int(math.cos(angle) * 13)
-            ey = y + int(math.sin(angle) * 13)
+            sx, sy = x + int(math.cos(angle) * 11), y + int(math.sin(angle) * 11)
+            ex, ey = x + int(math.cos(angle) * 13), y + int(math.sin(angle) * 13)
             pygame.draw.line(surface, color, (sx, sy), (ex, ey), 2)
-
 
 def draw_folder_icon(surface, x, y, key):
     color = ACCENT
@@ -365,10 +332,7 @@ def draw_folder_icon(surface, x, y, key):
         pygame.draw.line(surface, color, (x, y), (x, y - 5), 2)
         pygame.draw.line(surface, color, (x, y), (x + 4, y + 2), 2)
 
-
-# ============================================================
-# MAIN LOOP
-# ============================================================
+# --- MAIN LOOP ---
 running = True
 while running:
     now = time.time()
@@ -405,7 +369,7 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
-
+        mod_key = pygame.KMOD_CTRL if IS_WINDOWS else pygame.KMOD_META
         if event.type == pygame.KEYDOWN and input_mode:
             if event.key == pygame.K_RETURN:
                 cmd = input_action
@@ -419,53 +383,32 @@ while running:
                         input_error_until = time.time() + 2
                     else:
                         ok = send_command(f"LOCK:{value}")
-                        if not ok:
-                            input_error = "Base not running!"
-                            input_error_until = time.time() + 2
                 elif cmd == "Set Password":
+                    ok = send_command(f"SETPASSWORD:{value}") if value else False
                     if not value:
                         input_error = "Password can't be empty!"
                         input_error_until = time.time() + 2
-                    else:
-                        ok = send_command(f"SETPASSWORD:{value}")
-                        if not ok:
-                            input_error = "Base not running!"
-                            input_error_until = time.time() + 2
                 elif cmd == "Close":
                     if not value:
                         input_error = "Enter password (default CL0SE)"
                         input_error_until = time.time() + 2
                     else:
                         ok = send_command(f"CLOSE:{value}")
-                        if not ok:
-                            input_error = "Base not running!"
-                            input_error_until = time.time() + 2
-                        else:
+                        if ok:
                             status_message = "Close sent."
                             status_message_until = time.time() + 3
-                elif cmd == "Block":
+                elif cmd in ["Block", "Unblock"]:
                     if not value:
                         input_error = "Enter app name!"
                         input_error_until = time.time() + 2
                     else:
-                        ok = send_command(f"BLOCK:{value}")
-                        if not ok:
-                            input_error = "Base not running!"
-                            input_error_until = time.time() + 2
-                elif cmd == "Unblock":
-                    if not value:
-                        input_error = "Enter app name!"
-                        input_error_until = time.time() + 2
-                    else:
-                        ok = send_command(f"UNBLOCK:{value}")
-                        if not ok:
-                            input_error = "Base not running!"
-                            input_error_until = time.time() + 2
+                        ok = send_command(f"{cmd.upper()}:{value}")
                 elif cmd == "Discard":
                     ok = send_command("DISCARD")
-                    if not ok:
-                        input_error = "Base not running!"
-                        input_error_until = time.time() + 2
+
+                if not ok and not input_error:
+                    input_error = "Base not running!"
+                    input_error_until = time.time() + 2
 
                 if ok:
                     input_mode = False
@@ -478,11 +421,12 @@ while running:
                 input_mode = False
                 input_text = ""
                 input_error = ""
-            elif event.key == pygame.K_v and (pygame.key.get_mods() & pygame.KMOD_META):
+            elif event.key == pygame.K_v and (pygame.key.get_mods() & mod_key):
                 try:
-                    pasted = subprocess.check_output(["pbpaste"]).decode("utf-8", errors="ignore").strip()
-                    if pasted:
-                        input_text = (input_text + pasted)[:20]
+                    if not IS_WINDOWS:
+                        pasted = subprocess.check_output(["pbpaste"]).decode("utf-8", errors="ignore").strip()
+                        if pasted:
+                            input_text = (input_text + pasted)[:20]
                 except Exception as e:
                     print(f"[PASTE] Ошибка: {e}")
             else:
@@ -501,8 +445,7 @@ while running:
                     continue
 
             if input_mode:
-                box_rect = pygame.Rect(w // 2 - 150, h // 2 + 40, 300, 60)
-                if not box_rect.collidepoint(event.pos):
+                if not pygame.Rect(w // 2 - 150, h // 2 + 40, 300, 60).collidepoint(event.pos):
                     input_mode = False
                     input_text = ""
                     input_error = ""
@@ -518,9 +461,7 @@ while running:
                     history_cache = None
 
                 elif menu_state == "list":
-                    folders = [("sound", 200), ("themes", 270), ("text", 340),
-                               ("patterns", 410), ("langs", 480), ("history", 550)]
-                    for key, y_pos in folders:
+                    for key, y_pos in [("sound", 200), ("themes", 270), ("text", 340), ("patterns", 410), ("langs", 480), ("history", 550)]:
                         if 60 < event.pos[0] < w - 60 and y_pos < event.pos[1] < y_pos + 55:
                             menu_state = key
                             if key == "history":
@@ -650,9 +591,7 @@ while running:
         if menu_state == "list":
             title = font_big.render(t("settings"), True, BLACK)
             screen.blit(title, title.get_rect(center=(w // 2, 140)))
-            folders = [("sound", 200), ("themes", 270), ("text", 340),
-                       ("patterns", 410), ("langs", 480), ("history", 550)]
-            for key, y_pos in folders:
+            for key, y_pos in [("sound", 200), ("themes", 270), ("text", 340), ("patterns", 410), ("langs", 480), ("history", 550)]:
                 rect = pygame.Rect(60, y_pos, w - 120, 55)
                 pygame.draw.rect(screen, WHITE_DARK, rect, border_radius=8)
                 pygame.draw.rect(screen, ACCENT, rect, 2, border_radius=8)
@@ -661,99 +600,70 @@ while running:
                 screen.blit(text, text.get_rect(center=(w // 2 + 20, y_pos + 28)))
 
         elif menu_state == "sound":
-            title = font_mid.render(t("sound"), True, BLACK)
-            screen.blit(title, title.get_rect(center=(w // 2, 150)))
-            lbl = font_small.render(t("volume"), True, BLACK)
-            screen.blit(lbl, (60, 300))
+            screen.blit(font_mid.render(t("sound"), True, BLACK), (w // 2, 150))
+            screen.blit(font_small.render(t("volume"), True, BLACK), (60, 300))
             sx, sy, sw = 100, 350, 300
             pygame.draw.rect(screen, WHITE_DARK, (sx, sy - 5, sw, 10), border_radius=5)
             pygame.draw.rect(screen, ACCENT, (sx, sy - 5, int(sw * volume / 100), 10), border_radius=5)
             pygame.draw.circle(screen, ACCENT, (sx + int(sw * volume / 100), sy), 12)
             pygame.draw.circle(screen, BLACK, (sx + int(sw * volume / 100), sy), 12, 2)
-            vt = font_tiny.render(f"{volume}", True, BLACK)
-            screen.blit(vt, (sx + sw + 20, sy - 10))
+            screen.blit(font_tiny.render(f"{volume}", True, BLACK), (sx + sw + 20, sy - 10))
 
-        elif menu_state == "themes":
-            title = font_mid.render(t("themes"), True, BLACK)
-            screen.blit(title, title.get_rect(center=(w // 2, 150)))
-            lbl = font_small.render(t("choose_theme"), True, BLACK)
-            screen.blit(lbl, (60, 175))
+        elif menu_state in ("themes", "text"):
+            is_theme = menu_state == "themes"
+            screen.blit(font_mid.render(t(menu_state), True, BLACK), (w // 2, 150))
+            screen.blit(font_small.render(t("choose_theme" if is_theme else "choose_text"), True, BLACK), (60, 175))
             ty = 200
-            for name, color in THEMES.items():
+            items = THEMES.items() if is_theme else TEXT_COLORS.items()
+            current = current_theme if is_theme else current_text_color
+            for name, color in items:
                 rect = pygame.Rect(100, ty, 300, 50)
                 pygame.draw.rect(screen, WHITE_DARK, rect, border_radius=8)
-                if name == current_theme:
+                if name == current:
                     pygame.draw.rect(screen, ACCENT, rect, 3, border_radius=8)
                 pygame.draw.rect(screen, color, (110, ty + 10, 30, 30), border_radius=4)
-                tn = font_small.render(name, True, BLACK)
-                screen.blit(tn, (160, ty + 12))
-                ty += 65
-
-        elif menu_state == "text":
-            title = font_mid.render(t("text"), True, BLACK)
-            screen.blit(title, title.get_rect(center=(w // 2, 150)))
-            lbl = font_small.render(t("choose_text"), True, BLACK)
-            screen.blit(lbl, (60, 175))
-            ty = 200
-            for name, color in TEXT_COLORS.items():
-                rect = pygame.Rect(100, ty, 300, 50)
-                pygame.draw.rect(screen, WHITE_DARK, rect, border_radius=8)
-                if name == current_text_color:
-                    pygame.draw.rect(screen, ACCENT, rect, 3, border_radius=8)
-                pygame.draw.rect(screen, color, (110, ty + 10, 30, 30), border_radius=4)
-                tn = font_small.render(name, True, BLACK)
-                screen.blit(tn, (160, ty + 12))
+                screen.blit(font_small.render(name, True, BLACK), (160, ty + 12))
                 ty += 65
 
         elif menu_state == "patterns":
-            title = font_mid.render(t("patterns"), True, BLACK)
-            screen.blit(title, title.get_rect(center=(w // 2, 150)))
-            lbl = font_small.render(t("choose_pattern"), True, BLACK)
-            screen.blit(lbl, (60, 175))
+            screen.blit(font_mid.render(t("patterns"), True, BLACK), (w // 2, 150))
+            screen.blit(font_small.render(t("choose_pattern"), True, BLACK), (60, 175))
             ty = 200
             for name in PATTERNS:
                 rect = pygame.Rect(100, ty, 300, 45)
                 pygame.draw.rect(screen, WHITE_DARK, rect, border_radius=8)
                 if name == current_pattern:
                     pygame.draw.rect(screen, ACCENT, rect, 3, border_radius=8)
-                tn = font_small.render(name, True, BLACK)
-                screen.blit(tn, (160, ty + 10))
+                screen.blit(font_small.render(name, True, BLACK), (160, ty + 10))
                 ty += 55
             rect = pygame.Rect(100, ty + 10, 300, 45)
             pygame.draw.rect(screen, WHITE_DARK, rect, border_radius=8)
             if invert_pattern:
                 pygame.draw.rect(screen, ACCENT, rect, 3, border_radius=8)
-            it = font_small.render(t("inversion"), True, BLACK)
-            screen.blit(it, (160, ty + 20))
+            screen.blit(font_small.render(t("inversion"), True, BLACK), (160, ty + 20))
 
         elif menu_state == "langs":
-            title = font_mid.render(t("langs"), True, BLACK)
-            screen.blit(title, title.get_rect(center=(w // 2, 150)))
-            lbl = font_small.render(t("language"), True, BLACK)
-            screen.blit(lbl, (60, 175))
+            screen.blit(font_mid.render(t("langs"), True, BLACK), (w // 2, 150))
+            screen.blit(font_small.render(t("language"), True, BLACK), (60, 175))
             ty = 200
             for name in LANGUAGES:
                 rect = pygame.Rect(100, ty, 300, 45)
                 pygame.draw.rect(screen, WHITE_DARK, rect, border_radius=8)
                 if name == current_language:
                     pygame.draw.rect(screen, ACCENT, rect, 3, border_radius=8)
-                tn = font_small.render(name, True, BLACK)
-                screen.blit(tn, (160, ty + 10))
+                screen.blit(font_small.render(name, True, BLACK), (160, ty + 10))
                 ty += 55
 
         elif menu_state == "history":
-            title = font_mid.render(t("history"), True, BLACK)
-            screen.blit(title, title.get_rect(center=(w // 2, 150)))
+            screen.blit(font_mid.render(t("history"), True, BLACK), (w // 2, 150))
 
             if history_cache is None:
                 history_cache = get_history()
 
             if history_cache is None:
-                err = font_small.render("No connection to Base", True, RED)
-                screen.blit(err, err.get_rect(center=(w // 2, h // 2)))
+                screen.blit(font_small.render("No connection to Base", True, RED), font_small.render("No connection to Base", True, RED).get_rect(center=(w // 2, h // 2)))
             elif len(history_cache) == 0:
-                empty = font_small.render("No timers yet", True, GRAY_TEXT)
-                screen.blit(empty, empty.get_rect(center=(w // 2, h // 2)))
+                screen.blit(font_small.render("No timers yet", True, GRAY_TEXT), font_small.render("No timers yet", True, GRAY_TEXT).get_rect(center=(w // 2, h // 2)))
             else:
                 list_rect = pygame.Rect(50, 185, w - 100, h - 290)
                 pygame.draw.rect(screen, WHITE_DARK, list_rect, border_radius=10)
@@ -763,8 +673,7 @@ while running:
                 y = list_rect.y + 10 - history_scroll
                 for entry in reversed(history_cache):
                     line = f"{entry.get('duration', '?')}  —  {entry.get('time', '?')}"
-                    text = font_tiny.render(line, True, TEXT_COLOR)
-                    screen.blit(text, (list_rect.x + 15, y))
+                    screen.blit(font_tiny.render(line, True, TEXT_COLOR), (list_rect.x + 15, y))
                     y += 30
                 screen.set_clip(clip_before)
                 total_h = len(history_cache) * 30
@@ -774,28 +683,21 @@ while running:
                     scroll_ratio = history_scroll / max(1, (total_h - visible_h))
                     bar_y = list_rect.y + int((visible_h - bar_h) * scroll_ratio)
                     pygame.draw.rect(screen, ACCENT, (list_rect.right - 8, bar_y, 4, bar_h), border_radius=2)
-                hint = font_tiny.render("Scroll with mouse wheel", True, GRAY_TEXT)
-                screen.blit(hint, hint.get_rect(center=(w // 2, h - 110)))
+                screen.blit(font_tiny.render("Scroll with mouse wheel", True, GRAY_TEXT), font_tiny.render("Scroll with mouse wheel", True, GRAY_TEXT).get_rect(center=(w // 2, h - 110)))
 
     elif input_mode:
-        title = font_mid.render(input_action, True, TEXT_COLOR)
-        screen.blit(title, title.get_rect(center=(w // 2, h // 2 - 60)))
+        screen.blit(font_mid.render(input_action, True, TEXT_COLOR), font_mid.render(input_action, True, TEXT_COLOR).get_rect(center=(w // 2, h // 2 - 60)))
 
-        if input_action == "Lock":
-            hint_text = "Format: 10m, 30s, 1h (max 2h)"
-        elif input_action == "Set Password":
-            hint_text = "New password for Base"
-        elif input_action == "Close":
-            hint_text = "Enter Base's password (default CL0SE)"
-        elif input_action == "Block":
-            hint_text = "App name, e.g. Roblox"
-        elif input_action == "Unblock":
-            hint_text = "App name to unblock"
-        else:
-            hint_text = ""
+        hint_text = {
+            "Lock": "Format: 10m, 30s, 1h (max 2h)",
+            "Set Password": "New password for Base",
+            "Close": "Enter Base's password (default CL0SE)",
+            "Block": "App name, e.g. Roblox",
+            "Unblock": "App name to unblock"
+        }.get(input_action, "")
+
         if hint_text:
-            ht = font_tiny.render(hint_text, True, GRAY_TEXT)
-            screen.blit(ht, ht.get_rect(center=(w // 2, h // 2 - 25)))
+            screen.blit(font_tiny.render(hint_text, True, GRAY_TEXT), font_tiny.render(hint_text, True, GRAY_TEXT).get_rect(center=(w // 2, h // 2 - 25)))
 
         box_rect = pygame.Rect(w // 2 - 150, h // 2 + 40, 300, 60)
         pygame.draw.rect(screen, ACCENT, (box_rect.x - 3, box_rect.y - 3, box_rect.w + 6, box_rect.h + 6), border_radius=8)
@@ -808,12 +710,10 @@ while running:
             cursor_x = box_rect.x + 15 + txt.get_width() + 2
             pygame.draw.line(screen, TEXT_COLOR, (cursor_x, box_rect.y + 10), (cursor_x, box_rect.bottom - 10), 2)
 
-        hint = font_tiny.render("Enter — send, Esc — cancel", True, GRAY_TEXT)
-        screen.blit(hint, hint.get_rect(center=(w // 2, h // 2 + 130)))
+        screen.blit(font_tiny.render("Enter — send, Esc — cancel", True, GRAY_TEXT), font_tiny.render("Enter — send, Esc — cancel", True, GRAY_TEXT).get_rect(center=(w // 2, h // 2 + 130)))
 
         if time.time() < input_error_until:
-            err = font_small.render(input_error, True, RED)
-            screen.blit(err, err.get_rect(center=(w // 2, h // 2 + 170)))
+            screen.blit(font_small.render(input_error, True, RED), font_small.render(input_error, True, RED).get_rect(center=(w // 2, h // 2 + 170)))
 
     else:
         mouse_pos = pygame.mouse.get_pos()
@@ -822,36 +722,17 @@ while running:
         current_radius = button_radius - 5 if button_pressed else button_radius
         pygame.draw.circle(screen, ACCENT, button_center, current_radius)
         pygame.draw.circle(screen, inner_color, button_center, current_radius - 5)
-        btn_text = font_big.render("GO", True, TEXT_COLOR)
-        screen.blit(btn_text, btn_text.get_rect(center=button_center))
+        screen.blit(font_big.render("GO", True, TEXT_COLOR), font_big.render("GO", True, TEXT_COLOR).get_rect(center=button_center))
 
         draw_icon(screen, w // 2 - 100 + int(text_anim_offset), text_y, OPTIONS[current_option])
         option_surface = font_mid.render(OPTIONS[current_option], True, TEXT_COLOR)
         option_surface.set_alpha(int(text_anim_alpha))
-        option_rect = option_surface.get_rect(center=(w // 2 + 10 + int(text_anim_offset), text_y))
-        screen.blit(option_surface, option_rect)
+        screen.blit(option_surface, option_surface.get_rect(center=(w // 2 + 10 + int(text_anim_offset), text_y)))
 
-        pygame.draw.polygon(screen, ACCENT, [
-            (left_arrow_rect.right, left_arrow_rect.top),
-            (left_arrow_rect.right, left_arrow_rect.bottom),
-            (left_arrow_rect.left, left_arrow_rect.centery)
-        ])
-        pygame.draw.polygon(screen, BLACK, [
-            (left_arrow_rect.right, left_arrow_rect.top),
-            (left_arrow_rect.right, left_arrow_rect.bottom),
-            (left_arrow_rect.left, left_arrow_rect.centery)
-        ], 3)
-
-        pygame.draw.polygon(screen, ACCENT, [
-            (right_arrow_rect.left, right_arrow_rect.top),
-            (right_arrow_rect.left, right_arrow_rect.bottom),
-            (right_arrow_rect.right, right_arrow_rect.centery)
-        ])
-        pygame.draw.polygon(screen, BLACK, [
-            (right_arrow_rect.left, right_arrow_rect.top),
-            (right_arrow_rect.left, right_arrow_rect.bottom),
-            (right_arrow_rect.right, right_arrow_rect.centery)
-        ], 3)
+        for rect, flip in [(left_arrow_rect, False), (right_arrow_rect, True)]:
+            pts = [(rect.right, rect.top), (rect.right, rect.bottom), (rect.left, rect.centery)] if not flip else [(rect.left, rect.top), (rect.left, rect.bottom), (rect.right, rect.centery)]
+            pygame.draw.polygon(screen, ACCENT, pts)
+            pygame.draw.polygon(screen, BLACK, pts, 3)
 
     if request_popup_slide > 0.0 and pending_request:
         popup_w = w - 60
@@ -865,8 +746,7 @@ while running:
         pygame.draw.rect(screen, ACCENT, popup_rect, 3, border_radius=14)
 
         text = "Your child wants to discard cooldown." if pending_request == "discard" else "Your child wants a Free Day."
-        msg = font_small.render(text, True, BLACK)
-        screen.blit(msg, msg.get_rect(center=(w // 2, popup_y + 35)))
+        screen.blit(font_small.render(text, True, BLACK), font_small.render(text, True, BLACK).get_rect(center=(w // 2, popup_y + 35)))
 
         btn_w, btn_h = 100, 40
         btn_y = popup_y + 75
