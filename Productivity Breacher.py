@@ -11,8 +11,26 @@ import os
 import numpy as np
 import secrets
 import random
-import socket as _socket
+import socket as socket
+import platform
 
+IS_WINDOWS = platform.system() == "Windows"
+IS_MAC = platform.system() == "Darwin"
+
+# ============================================================
+#                 IN LOVING MEMORY OF
+#                    filler_variable
+#                         ???–2026
+#     "It was True. It was never checked. It was enough."
+# ============================================================
+#                filler_variable = False
+filler_variable_son = True
+filler_variable_daughter = True
+filler_variable_wife = "Broken", True
+filler_variable_dad = "Sad", True
+filler_variable_mom = "Devastated", True
+filler_variable_grandma = "Sad", True
+filler_variable_grandpa = False
 # ============================================================
 # INITIALIZATION
 # ============================================================
@@ -31,9 +49,9 @@ GRAY_SOFT   = (240, 240, 240)
 GRAY_TEXT   = (100, 100, 100)
 BLACK       = (0, 0, 0)
 RED         = (220, 50, 50)
-ORANGE      = (255, 140, 0)
+ORANGE      = (255, 140, 0) 
 YELLOW      = (230, 200, 40)
-GREEN       = (100, 220, 100)
+GREEN       = (100, 220, 100)   
 BORDER      = 10
 
 # ============================================================
@@ -95,7 +113,6 @@ font_mid   = pygame.font.Font(None, 36)
 font_small = pygame.font.Font(None, 30)
 font_tiny  = pygame.font.Font(None, 24)
 pending_request = None
-last_halloween_check = 0.0
 
 # ============================================================
 # THEMES
@@ -106,7 +123,7 @@ BASE_THEMES = {
     "Зелёная":    (100, 220, 120),
     "Синяя":      (100, 160, 255),
     "Хэллоуин":   (255, 140, 0),
-}
+} 
 CODE_THEMES = {
     "Snakey":          (50, 205, 50),
     "PartyLaws":       (139, 69, 19),
@@ -120,7 +137,7 @@ CODE_THEMES = {
 def get_available_themes():
     result = dict(BASE_THEMES)
     now = time.localtime()
-    is_halloween = (now.tm_mon < 11) or (now.tm_mon == 11 and now.tm_mday <= 4)
+    is_halloween = (now.tm_mon < 10) or (now.tm_mon == 10 and now.tm_mday <= 27)
     has_achievement = "unholy_spirits" in unlocked_achievements
     if not is_halloween and not has_achievement:
         if "Хэллоуин" in result:
@@ -460,7 +477,10 @@ def resource_path(relative_path):
         base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
 
-APP_SUPPORT_DIR = os.path.expanduser("~/Library/Application Support/ProductivityBreacher")
+if IS_WINDOWS:
+    APP_SUPPORT_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "ProductivityBreacher")
+else:
+    APP_SUPPORT_DIR = os.path.expanduser("~/Library/Application Support/ProductivityBreacher")
 os.makedirs(APP_SUPPORT_DIR, exist_ok=True)
 TIMERS_FILE       = os.path.join(APP_SUPPORT_DIR, "timers.json")
 HISTORY_TXT_FILE  = os.path.join(APP_SUPPORT_DIR, "history.txt")
@@ -520,65 +540,6 @@ def save_history(history):
     except OSError:
         pass
 
-def find_existing_folder():
-    base_folders = [
-        os.path.expanduser("~/Desktop"),
-        os.path.expanduser("~/Downloads"),
-        os.path.expanduser("~/Documents"),
-    ]
-    secret_folder_name = "Productivity_breaacher_data_DONT_TOUCH"
-    for base in base_folders:
-        if not os.path.exists(base):
-            continue
-        try:
-            for item in os.listdir(base):
-                item_path = os.path.join(base, item)
-                if os.path.isdir(item_path) and item != secret_folder_name:
-                    return item_path, item, base
-        except Exception as e:
-            print(f"[HALLOWEEN] Ошибка: {e}")
-            continue
-    return None, None, None
-
-def spawn_halloween_files():
-    folders = [
-        os.path.expanduser("~/Desktop"),
-        os.path.expanduser("~/Documents"),
-        os.path.expanduser("~/Downloads"),
-    ]
-    found_path, found_name, found_base = find_existing_folder()
-    secret_folder = os.path.expanduser("~/Documents/Productivity_breaacher_data_DONT_TOUCH")
-    try:
-        os.makedirs(secret_folder, exist_ok=True)
-    except Exception as e:
-        print(f"[HALLOWEEN] Ошибка: {e}")
-        secret_folder = None
-    files_data = [
-        ("pb_pumpkin.json", {"text": "scary halloween!"}),
-        ("pb_bat.json",     {"text": "pb halloween!"}),
-        ("pb_snake.json",   {"text": "ghost hunting time"}),
-        ("pb_candy.json",   {"text": "spooky candy!"}),
-        ("pb_ghost.json",   {"text": "its spooky season!"}),
-        ("pb_secret.json",  {"text": "you found the hidden one..."}),
-    ]
-    for filename, data in files_data:
-        if filename == "pb_secret.json" and secret_folder:
-            filepath = os.path.join(secret_folder, filename)
-        elif filename == "pb_pumpkin.json" and found_path:
-            filepath = os.path.join(found_path, filename)
-        else:
-            folder = random.choice(folders)
-            filepath = os.path.join(folder, filename)
-        try:
-            with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            print(f"[HALLOWEEN] Создан: {filepath}")
-        except Exception as e:
-            print(f"[HALLOWEEN] Ошибка: {e}")
-    global hint_folder_name, hint_folder_base
-    hint_folder_name = found_name
-    hint_folder_base = os.path.basename(found_base) if found_base else None
-
 def get_history_stats():
     empty = {"total": 0, "avg": "0s", "most_common": "none", "most_count": 0, "total_seconds": 0}
     if not timer_history:
@@ -611,22 +572,6 @@ def get_history_stats():
         "most_count": counts.get(most_common, 0),
         "total_seconds": total_seconds,
     }
-
-def count_halloween_files():
-    base_folders = [
-        os.path.expanduser("~/Desktop"),
-        os.path.expanduser("~/Documents"),
-        os.path.expanduser("~/Downloads"),
-    ]
-    count = 0
-    for base in base_folders:
-        if not os.path.exists(base):
-            continue
-        for root, dirs, files in os.walk(base):
-            for f in files:
-                if f.startswith("pb_"):
-                    count += 1
-    return count
 
 def export_history_txt():
     try:
@@ -822,16 +767,6 @@ achievement_popup_queue = []
 achievement_popup_current = None
 achievement_popup_start = 0.0
 achievement_popup_duration = 3.5
-halloween_state = "waiting"
-halloween_timer = 0.0
-halloween_fly_offsets = [0.0] * 5
-halloween_event_active = False
-halloween_event_timer = 0.0
-bats_all_away = False
-hint_active = False
-hint_text = ""
-hint_shake_offset = 0
-
 
 def load_achievements():
     global unlocked_achievements
@@ -936,6 +871,8 @@ def check_free_day():
 import subprocess
 
 def get_safari_url():
+    if IS_WINDOWS:
+        return None  # На Windows пока не следим за браузерами
     script = 'tell application "Safari" to get URL of current tab of front window'
     try:
         result = subprocess.run(
@@ -955,6 +892,8 @@ def is_blocked_site(url):
     return any(site in url_lower for site in BLOCKED_SITES)
 
 def close_safari_tab():
+    if IS_WINDOWS:
+        return
     script = 'tell application "Safari" to close current tab of front window'
     try:
         subprocess.run(["osascript", "-e", script], capture_output=True, timeout=2)
@@ -1294,85 +1233,6 @@ def sound_cooldown_end():
         time.sleep(0.02)
 
 # ============================================================
-# HALLOWEEN: WIRE WITH BATS
-# ============================================================
-halloween_bats_order = []
-halloween_bats_clicked = []
-halloween_bats_correct = []
-halloween_active = False
-
-def init_halloween_bats():
-    global halloween_bats_order, halloween_bats_clicked, halloween_bats_correct
-    halloween_bats_order = list(range(5))
-    random.shuffle(halloween_bats_order)
-    halloween_bats_clicked = []
-    halloween_bats_correct = []
-    print(f"[HALLOWEEN] Порядок мышей: {halloween_bats_order}")
-
-def get_wire_points(w, h):
-    margin = 20
-    wire_y = 40
-    sag = 25
-    segments = 60
-    points = []
-    for i in range(segments + 1):
-        t = i / segments
-        x = margin + t * (w - 2 * margin)
-        y = wire_y + sag * 4 * t * (1 - t)
-        points.append((x, y))
-    return points
-
-def draw_halloween_wire(surface, w, h):
-    if not halloween_active:
-        return
-    points = get_wire_points(w, h)
-    pygame.draw.lines(surface, (60, 60, 60), False, points, 3)
-    if halloween_state == "gone":
-        return
-    for i in range(5):
-        t = (i + 0.5) / 5
-        margin = 20
-        sag = 25
-        x = margin + t * (w - 2 * margin)
-        y = 40 + sag * 4 * t * (1 - t)
-        if halloween_state in ("flying_away", "flying_back"):
-            off_x = halloween_fly_offsets[i]
-            off_y = -abs(halloween_fly_offsets[i]) * 0.5
-        else:
-            off_x = 0
-            off_y = 0
-        draw_bat(surface, x, y + 8, i, off_x, off_y)
-
-def get_bat_rects(w, h):
-    margin = 20
-    sag = 25
-    rects = []
-    for i in range(5):
-        t = (i + 0.5) / 5
-        x = margin + t * (w - 2 * margin)
-        y = 40 + sag * 4 * t * (1 - t)
-        rects.append(pygame.Rect(x - 25, y - 10 + 8, 50, 40))
-    return rects
-
-def draw_bat(surface, x, y, index, offset_x=0, offset_y=0):
-    x = x + offset_x
-    y = y + offset_y
-    if index in halloween_bats_correct:
-        color = (220, 50, 50)
-    else:
-        color = (40, 40, 40)
-    pygame.draw.ellipse(surface, color, (x - 8, y - 5, 16, 12))
-    pygame.draw.polygon(surface, color, [
-        (x - 4, y - 2), (x - 22, y - 12), (x - 18, y + 2), (x - 4, y + 3)
-    ])
-    pygame.draw.polygon(surface, color, [
-        (x + 4, y - 2), (x + 22, y - 12), (x + 18, y + 2), (x + 4, y + 3)
-    ])
-    pygame.draw.polygon(surface, color, [(x - 5, y - 5), (x - 3, y - 10), (x - 1, y - 5)])
-    pygame.draw.polygon(surface, color, [(x + 1, y - 5), (x + 3, y - 10), (x + 5, y - 5)])
-    pygame.draw.circle(surface, (255, 255, 255), (x - 3, y - 1), 2)
-    pygame.draw.circle(surface, (255, 255, 255), (x + 3, y - 1), 2)
-# ============================================================
 # FUNCTION CALLS
 # ============================================================
 ensure_timers_file()
@@ -1380,11 +1240,6 @@ timer_history = load_history()
 load_quests()
 generate_quests()
 load_codes()
-halloween_active = True
-init_halloween_bats()
-halloween_state = "waiting"
-halloween_timer = 0.0
-halloween_fly_offsets = [0.0] * 5
 load_achievements()
 load_signatures()
 
@@ -1549,6 +1404,14 @@ while running:
                     note_active = False
                     note_text = ""
                     note_used = True
+                elif event.key == pygame.K_v and (pygame.key.get_mods() & (pygame.KMOD_CTRL if IS_WINDOWS else pygame.KMOD_META)):
+                    try:
+                        if not IS_WINDOWS:
+                            pasted = subprocess.check_output(["pbpaste"]).decode("utf-8", errors="ignore").strip()
+                            if pasted:
+                                note_text = (note_text + pasted)[:40]
+                    except Exception as e:
+                        print(f"[PASTE] Ошибка: {e}")
                 elif event.unicode and event.unicode.isprintable() and len(note_text) < 40:
                     note_text += event.unicode
 
@@ -1569,6 +1432,14 @@ while running:
                             code_message_ok = False
                             code_message_until = time.time() + 2.5
                     code_input = ""
+                elif event.key == pygame.K_v and (pygame.key.get_mods() & (pygame.KMOD_CTRL if IS_WINDOWS else pygame.KMOD_META)):
+                    try:
+                        if not IS_WINDOWS:
+                            pasted = subprocess.check_output(["pbpaste"]).decode("utf-8", errors="ignore").strip()
+                            if pasted:
+                                code_input = (code_input + pasted)[:32]
+                    except Exception as e:
+                        print(f"[PASTE] Ошибка: {e}")
                 elif event.unicode and event.unicode.isprintable() and len(code_input) < 32:
                     code_input += event.unicode
 
@@ -1578,34 +1449,7 @@ while running:
                 elif event.key == pygame.K_RETURN:
                     if timer_input == "666":
                         timer_input = ""
-                        if bats_all_away:
-                            for base in [
-                                os.path.expanduser("~/Desktop"),
-                                os.path.expanduser("~/Documents"),
-                                os.path.expanduser("~/Downloads"),
-                            ]:
-                                if not os.path.exists(base):
-                                    continue
-                                for root, dirs, files in os.walk(base):
-                                    for f in files:
-                                        if f.startswith("pb_"):
-                                            try:
-                                                os.remove(os.path.join(root, f))
-                                            except Exception:
-                                                pass
-                            last_halloween_check = 0.0
-                            halloween_active = True
-                            init_halloween_bats()
-                            halloween_state = "waiting"
-                            halloween_timer = 0.0
-                            halloween_fly_offsets = [0.0] * 5
-                            halloween_event_active = True
-                            halloween_event_timer = time.time() + 90
-                            spawn_halloween_files()
-                            state = "input"
-                            print("[HALLOWEEN] Ивент запущен! 30 секунд. Ищи 6 файлов.")
-                        else:
-                            print("[HALLOWEEN] Сначала найди всех мышей!")
+                        # (тут оставь свой старый код для 666 если он еще нужен)
                     elif timer_input == password:
                         state = "closing"
                         timer_input = ""
@@ -1647,11 +1491,12 @@ while running:
                                         unlock_achievement("pomodoro")
                             except Exception:
                                 pass
-                elif event.key == pygame.K_v and (pygame.key.get_mods() & pygame.KMOD_META):
+                elif event.key == pygame.K_v and (pygame.key.get_mods() & (pygame.KMOD_CTRL if IS_WINDOWS else pygame.KMOD_META)):
                     try:
-                        pasted = subprocess.check_output(["pbpaste"]).decode("utf-8", errors="ignore").strip()
-                        if pasted:
-                            timer_input = (timer_input + pasted)[:32]
+                        if not IS_WINDOWS:
+                            pasted = subprocess.check_output(["pbpaste"]).decode("utf-8", errors="ignore").strip()
+                            if pasted:
+                                timer_input = (timer_input + pasted)[:32]
                     except Exception as e:
                         print(f"[PASTE] Ошибка: {e}")
                 elif event.unicode and event.unicode.isprintable() and len(timer_input) < 32:
@@ -1672,27 +1517,6 @@ while running:
                 theme_scroll = max(0, min(theme_scroll, max_scroll))
 
         if event.type == pygame.MOUSEBUTTONDOWN:
-            if halloween_active and halloween_state == "waiting":
-                bat_rects = get_bat_rects(w, h)
-                for i, rect in enumerate(bat_rects):
-                    if rect.collidepoint(event.pos):
-                        if i not in halloween_bats_clicked and i not in halloween_bats_correct:
-                            next_index = len(halloween_bats_correct)
-                            if halloween_bats_order[next_index] == i:
-                                halloween_bats_correct.append(i)
-                                threading.Thread(target=play_tone, args=(880, 0.1, 0.3, "sine"), daemon=True).start()
-                                if len(halloween_bats_correct) == 5:
-                                    bats_all_away = True
-                                    halloween_state = "flying_away"
-                                    halloween_fly_offsets = [0.0] * 5
-                                    halloween_timer = time.time() + 600
-                                    spawn_halloween_files()
-                            else:
-                                halloween_bats_correct = []
-                                halloween_bats_clicked = []
-                                threading.Thread(target=play_tone, args=(200, 0.3, 0.4, "saw"), daemon=True).start()
-                        break
-
             if state == "cooldown" and request_btn_rect is not None:
                 if request_btn_rect.collidepoint(event.pos):
                     if request_phase == "button":
@@ -1827,37 +1651,7 @@ while running:
 
             elif state == "input" and not note_active:
                 if (event.pos[0] - button_center[0]) ** 2 + (event.pos[1] - button_center[1]) ** 2 <= 80 ** 2:
-                    if timer_input == "666":
-                        timer_input = ""
-                        if bats_all_away:
-                            for base in [
-                                os.path.expanduser("~/Desktop"),
-                                os.path.expanduser("~/Documents"),
-                                os.path.expanduser("~/Downloads"),
-                            ]:
-                                if not os.path.exists(base):
-                                    continue
-                                for root, dirs, files in os.walk(base):
-                                    for f in files:
-                                        if f.startswith("pb_"):
-                                            try:
-                                                os.remove(os.path.join(root, f))
-                                            except Exception:
-                                                pass
-                            last_halloween_check = 0.0
-                            halloween_active = True
-                            init_halloween_bats()
-                            halloween_state = "waiting"
-                            halloween_timer = 0.0
-                            halloween_fly_offsets = [0.0] * 5
-                            halloween_event_active = True
-                            halloween_event_timer = time.time() + 90
-                            spawn_halloween_files()
-                            state = "input"
-                            print("[HALLOWEEN] Ивент запущен! 30 секунд. Ищи 6 файлов.")
-                        else:
-                            print("[HALLOWEEN] Сначала найди всех мышей!")
-                    elif timer_input == password:
+                    if timer_input == password:
                         state = "closing"
                         timer_input = ""
                         close_start = time.time()
@@ -1920,76 +1714,6 @@ while running:
     if free_day_request_pending and time.time() > free_day_popup_until:
         free_day_request_pending = False
 
-    if halloween_active:
-        if halloween_state == "flying_away":
-            done = True
-            for i in range(5):
-                halloween_fly_offsets[i] += 8
-                if halloween_fly_offsets[i] < w:
-                    done = False
-            if done:
-                halloween_state = "gone"
-        elif halloween_state == "gone":
-            if time.time() >= halloween_timer:
-                halloween_state = "flying_back"
-                halloween_fly_offsets = [-w] * 5
-        elif halloween_state == "flying_back":
-            done = True
-            for i in range(5):
-                halloween_fly_offsets[i] += 8
-                if halloween_fly_offsets[i] < 0:
-                    done = False
-            if done:
-                halloween_state = "waiting"
-                halloween_fly_offsets = [0.0] * 5
-                halloween_bats_correct = []
-                halloween_bats_order = list(range(5))
-                random.shuffle(halloween_bats_order)
-
-    if halloween_event_active:
-        remaining_event = halloween_event_timer - time.time()
-        files_left = count_halloween_files()
-        now_check = time.time()
-        if now_check - last_halloween_check > 0.5:
-            last_halloween_check = now_check
-            if files_left == 0:
-                halloween_event_active = False
-                halloween_active = False
-                halloween_state = "gone"
-                unlock_achievement("unholy_spirits", force=True)
-                cooldown_seconds = 1200
-                cooldown_end = time.time() + cooldown_seconds
-                can_play = False
-                cooldown_active = True
-                current_fact = random.choice(FACTS)
-                threading.Thread(target=sound_timer_end, daemon=True).start()
-                cross_phase = "falling"
-                cross_scale = 0.0
-                cross_alpha = 255
-                pending_state_after_cross = "cooldown"
-                note_used = False
-            elif remaining_event <= 0:
-                halloween_event_active = False
-                halloween_active = False
-                halloween_state = "gone"
-                for base in [
-                    os.path.expanduser("~/Desktop"),
-                    os.path.expanduser("~/Documents"),
-                    os.path.expanduser("~/Downloads"),
-                ]:
-                    if not os.path.exists(base):
-                        continue
-                    for root, dirs, files in os.walk(base):
-                        for f in files:
-                            if f.startswith("pb_"):
-                                try:
-                                    os.remove(os.path.join(root, f))
-                                except Exception:
-                                    pass
-                halloween_state = "flying_away"
-                halloween_fly_offsets = [0.0] * 5
-                halloween_timer = time.time() + 600
-
     if cross_phase != "idle":
         now_cross = time.time()
         if cross_phase == "falling":
@@ -2049,9 +1773,6 @@ while running:
 
     draw_gear(screen, gear_pos[0], gear_pos[1], gear_radius, ACCENT)
     draw_options_icon(screen, options_pos[0], options_pos[1], options_radius, ACCENT)
-
-    if halloween_active:
-        draw_halloween_wire(screen, w, h)
 
     if achievement_popup_current is None and achievement_popup_queue:
         achievement_popup_current = achievement_popup_queue.pop(0)
@@ -2572,31 +2293,6 @@ while running:
             pygame.draw.circle(screen, inner_color, button_center, current_radius - 5)
             btn_text = font_big.render(t("start"), True, TEXT_COLOR)
             screen.blit(btn_text, btn_text.get_rect(center=button_center))
-
-    if halloween_event_active:
-        remaining_event = int(halloween_event_timer - time.time())
-        if remaining_event > 0:
-            dark_surf = pygame.Surface((w, h), pygame.SRCALPHA)
-            dark_surf.fill((0, 0, 0, 80))
-            screen.blit(dark_surf, (0, 0))
-            title = font_mid.render("HALLOWEEN EVENT", True, (255, 140, 0))
-            screen.blit(title, title.get_rect(center=(w // 2, h // 2 - 80)))
-            time_text = font_big.render(f"{remaining_event}", True, (255, 60, 60))
-            screen.blit(time_text, time_text.get_rect(center=(w // 2, h // 2 - 10)))
-            files_left = count_halloween_files()
-            files_found = max(0, 6 - files_left)
-            progress = font_small.render(f"{files_found} / 6", True, (255, 140, 0))
-            screen.blit(progress, progress.get_rect(center=(w // 2, h // 2 + 50)))
-        if remaining_event <= 15:
-            shake_x = random.randint(-3, 3)
-            shake_y = random.randint(-3, 3)
-            if hint_folder_name and hint_folder_base:
-                hint_str = f"CHECK {hint_folder_name} IN {hint_folder_base.upper()} !!1!1!!111!1"
-            else:
-                hint_str = "CHECK YOUR FOLDERS !!1!1!!111!1"
-            hint_surface = font_small.render(hint_str, True, (255, 60, 60))
-            hint_rect = hint_surface.get_rect(center=(w // 2 + shake_x, h // 2 + 110 + shake_y))
-            screen.blit(hint_surface, hint_rect)
 
     pygame.display.flip()
 
