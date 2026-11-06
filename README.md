@@ -49,4 +49,4 @@ To let your parent have control over your app via "Productivity Breacher PARENT"
       · Relocate the file into the folder you just opened in "Finder".
    Then, open both the apps: main on the child's device, PARENT on the parent's device. Enjoy.
 
-P.S. v2.15 is OUT NOW! Have fun with finding all the secrets, getting used to the new mechanics and overall getting your productivity better! Also, I've got my own discord server! https://discord.gg/8enSRtS7Tq. Updates are weekly at Sundays, 9:00 AM (California). Cya then!
+P.S. v2.2 is out now, and if you're a windows user then I can't help with your installation problems. Truly sorry. If you're trying to connect to the parent app, do the same as for mac, except instead of library/application support/Productivity Breacher it's APPDATA/ProductivityBreacher. Updates are weekly on Sundays, 9 AM (California). Cya then!
