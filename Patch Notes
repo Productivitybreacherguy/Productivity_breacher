@@ -8,6 +8,7 @@ Update v2.2 the WINDOWED update. (LATEST)
     +- Kept the Orange theme for people with the "Unholy Spirits" Achievement.
     + Added windows support for both apps.
     + several small bug fixes.
+    - R.I.P. Filler variable. It was true. It was never checked. It was enough.
 * Socket
     + Files are now created in APPDATA/ProductivityBreacher if you're on windows.
 
